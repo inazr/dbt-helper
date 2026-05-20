@@ -17,11 +17,14 @@ import com.intellij.ui.components.JBScrollPane
 import com.dbthelper.core.ProfilesParser
 import com.dbthelper.settings.DbtHelperSettings
 import java.awt.BorderLayout
+import java.awt.Color
 import java.awt.Dimension
 import java.awt.FlowLayout
 import java.awt.Font
 import javax.swing.*
-import javax.swing.text.DefaultCaret
+import javax.swing.text.AttributeSet
+import javax.swing.text.SimpleAttributeSet
+import javax.swing.text.StyleConstants
 
 class DbtRunnerTab(
     private val project: Project,
@@ -30,16 +33,30 @@ class DbtRunnerTab(
 
     private val mapper = ObjectMapper().registerModule(KotlinModule.Builder().build())
 
-    private val logArea = JTextArea().apply {
+    private val logPane = object : JTextPane() {
+        // Force the pane to track the viewport width so soft-wrap kicks in
+        // and we never get a horizontal scrollbar.
+        override fun getScrollableTracksViewportWidth(): Boolean = true
+    }.apply {
         isEditable = false
         font = Font("JetBrains Mono", Font.PLAIN, 12).takeIf { it.family == "JetBrains Mono" }
             ?: Font(Font.MONOSPACED, Font.PLAIN, 12)
-        lineWrap = false
-        (caret as? DefaultCaret)?.updatePolicy = DefaultCaret.ALWAYS_UPDATE
     }
+
+    private val logDoc get() = logPane.styledDocument
+
+    private val ansiRegex = Regex("\\[([0-9;]*)m")
+
+    private val baseStyle: AttributeSet = SimpleAttributeSet()
+
+    private var currentStyle: AttributeSet = baseStyle
 
     private val runButton = JButton("Run").apply {
         toolTipText = "Run current model (dbt run --select)"
+    }
+
+    private val buildButton = JButton("Build").apply {
+        toolTipText = "Build current model (dbt build --select — runs + tests + snapshots + seeds)"
     }
 
     private val fullRefreshCheckBox = JCheckBox("full-refresh").apply {
@@ -93,6 +110,7 @@ class DbtRunnerTab(
             add(targetCombo)
             add(JSeparator(SwingConstants.VERTICAL).apply { preferredSize = Dimension(2, 20) })
             add(runButton)
+            add(buildButton)
             add(fullRefreshCheckBox)
             add(testButton)
             add(compileButton)
@@ -103,9 +121,12 @@ class DbtRunnerTab(
             add(stopButton)
         }
         add(toolbar, BorderLayout.NORTH)
-        add(JBScrollPane(logArea), BorderLayout.CENTER)
+        add(JBScrollPane(logPane).apply {
+            horizontalScrollBarPolicy = JScrollPane.HORIZONTAL_SCROLLBAR_NEVER
+        }, BorderLayout.CENTER)
 
         runButton.addActionListener { runCurrentModel() }
+        buildButton.addActionListener { buildCurrentModel() }
         testButton.addActionListener { testCurrentModel() }
         compileButton.addActionListener { compileCurrentModel() }
         previewButton.addActionListener { previewCurrentModel() }
@@ -122,7 +143,7 @@ class DbtRunnerTab(
         // Initial check
         updateFullRefreshVisibility()
         generateButton.addActionListener { runDocsGenerate() }
-        clearButton.addActionListener { logArea.text = "" }
+        clearButton.addActionListener { clearLog() }
         stopButton.addActionListener { stopCurrentCommand() }
     }
 
@@ -205,10 +226,24 @@ class DbtRunnerTab(
         }
         if (isRunning) return
         setRunning(true)
-        logArea.text = ""
+        clearLog()
 
         val runner = DbtCommandRunner(project)
         runner.runModel(modelName, fullRefreshCheckBox.isSelected, createStreamingListener("dbt run"))
+    }
+
+    private fun buildCurrentModel() {
+        val modelName = getCurrentModelName()
+        if (modelName == null) {
+            showNotification("No dbt model in current file", NotificationType.WARNING)
+            return
+        }
+        if (isRunning) return
+        setRunning(true)
+        clearLog()
+
+        val runner = DbtCommandRunner(project)
+        runner.runBuild(modelName, fullRefreshCheckBox.isSelected, createStreamingListener("dbt build"))
     }
 
     private fun testCurrentModel() {
@@ -219,7 +254,7 @@ class DbtRunnerTab(
         }
         if (isRunning) return
         setRunning(true)
-        logArea.text = ""
+        clearLog()
 
         val runner = DbtCommandRunner(project)
         runner.runTest(modelName, createStreamingListener("dbt test"))
@@ -233,7 +268,7 @@ class DbtRunnerTab(
         }
         if (isRunning) return
         setRunning(true)
-        logArea.text = ""
+        clearLog()
 
         val runner = DbtCommandRunner(project)
         runner.runCompile(modelName, createStreamingListener("dbt compile"))
@@ -243,7 +278,7 @@ class DbtRunnerTab(
         return object : DbtCommandRunner.OutputListener {
             override fun onLine(line: String) {
                 ApplicationManager.getApplication().invokeLater {
-                    logArea.append(line + "\n")
+                    appendLogLine(line)
                 }
             }
 
@@ -267,14 +302,15 @@ class DbtRunnerTab(
     private fun stopCurrentCommand() {
         currentProcess?.destroyForcibly()
         currentProcess = null
-        logArea.append("\n--- Process terminated ---\n")
+        appendLogLine("")
+        appendLogLine("--- Process terminated ---")
     }
 
     private fun previewCurrentModel() {
         val file = com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project)
             .selectedFiles.firstOrNull()
         if (file == null) {
-            logArea.text = "No file open.\n"
+            setLog("No file open.")
             return
         }
         val service = com.dbthelper.core.ManifestService.getInstance(project)
@@ -295,7 +331,7 @@ class DbtRunnerTab(
             inlineSql = null
         }
         if (modelName == null && inlineSql == null) {
-            logArea.text = "No model resolved for current file. Generate docs first or select SQL.\n"
+            setLog("No model resolved for current file. Generate docs first or select SQL.")
             return
         }
         runPreview(modelName, inlineSql)
@@ -304,14 +340,14 @@ class DbtRunnerTab(
     fun runPreview(modelName: String?, inlineSql: String?) {
         if (isRunning) return
         setRunning(true)
-        logArea.text = "Running preview...\n"
+        setLog("Running preview...")
 
         val runner = DbtCommandRunner(project)
         runner.runShow(modelName, inlineSql, object : DbtCommandRunner.OutputListener {
             override fun onLine(line: String) {
                 if (line.startsWith("$") || line.matches(Regex("^\\d{2}:\\d{2}:\\d{2}.*")) || line.startsWith("Previewing")) {
                     ApplicationManager.getApplication().invokeLater {
-                        logArea.append(line + "\n")
+                        appendLogLine(line)
                     }
                 }
             }
@@ -323,9 +359,11 @@ class DbtRunnerTab(
                     if (result.success) {
                         val formatted = tryFormatJsonTable(result.output)
                         if (formatted != null) {
-                            logArea.append("\n" + formatted + "\n")
+                            appendLogLine("")
+                            for (l in formatted.lines()) appendLogLine(l)
                         } else {
-                            logArea.append("\n(no data returned)\n")
+                            appendLogLine("")
+                            appendLogLine("(no data returned)")
                         }
                     } else if (result.exitCode != -1) {
                         showNotification("dbt preview failed (exit code ${result.exitCode})", NotificationType.ERROR)
@@ -411,6 +449,7 @@ class DbtRunnerTab(
         isRunning = running
         generateButton.isEnabled = !running
         runButton.isEnabled = !running
+        buildButton.isEnabled = !running
         testButton.isEnabled = !running
         compileButton.isEnabled = !running
         previewButton.isEnabled = !running
@@ -421,13 +460,13 @@ class DbtRunnerTab(
     private fun runDocsGenerate() {
         if (isRunning) return
         setRunning(true)
-        logArea.text = ""
+        clearLog()
 
         val runner = DbtCommandRunner(project)
         runner.runDocsGenerate(object : DbtCommandRunner.OutputListener {
             override fun onLine(line: String) {
                 ApplicationManager.getApplication().invokeLater {
-                    logArea.append(line + "\n")
+                    appendLogLine(line)
                 }
             }
 
@@ -462,6 +501,68 @@ class DbtRunnerTab(
             }
             com.intellij.ui.SystemNotifications.getInstance().notify("dbt-helper", title, content)
         }
+    }
+
+    private fun clearLog() {
+        logDoc.remove(0, logDoc.length)
+        currentStyle = baseStyle
+    }
+
+    private fun setLog(text: String) {
+        clearLog()
+        appendLogLine(text)
+    }
+
+    private fun appendLogLine(line: String) {
+        val coloredEnabled = DbtHelperSettings.getInstance(project).state.enableColoredOutput
+        if (!coloredEnabled) {
+            // Strip ANSI sequences entirely so leaked codes don't show as garbage.
+            val clean = ansiRegex.replace(line, "")
+            logDoc.insertString(logDoc.length, clean + "\n", baseStyle)
+        } else {
+            var pos = 0
+            for (m in ansiRegex.findAll(line)) {
+                if (m.range.first > pos) {
+                    logDoc.insertString(logDoc.length, line.substring(pos, m.range.first), currentStyle)
+                }
+                currentStyle = styleForAnsiParams(m.groupValues[1])
+                pos = m.range.last + 1
+            }
+            if (pos < line.length) {
+                logDoc.insertString(logDoc.length, line.substring(pos), currentStyle)
+            }
+            logDoc.insertString(logDoc.length, "\n", currentStyle)
+        }
+        logPane.caretPosition = logDoc.length
+    }
+
+    private fun styleForAnsiParams(params: String): AttributeSet {
+        // Apply each SGR code in order on top of the current style.
+        val codes = if (params.isBlank()) listOf(0) else params.split(';').mapNotNull { it.toIntOrNull() }
+        var attrs = SimpleAttributeSet(currentStyle)
+        for (code in codes) {
+            when (code) {
+                0 -> attrs = SimpleAttributeSet(baseStyle)
+                1 -> StyleConstants.setBold(attrs, true)
+                22 -> StyleConstants.setBold(attrs, false)
+                in 30..37 -> StyleConstants.setForeground(attrs, ansiColor(code - 30, bright = false))
+                in 90..97 -> StyleConstants.setForeground(attrs, ansiColor(code - 90, bright = true))
+                39 -> attrs.removeAttribute(StyleConstants.Foreground)
+            }
+        }
+        return attrs
+    }
+
+    private fun ansiColor(idx: Int, bright: Boolean): Color = when (idx) {
+        0 -> if (bright) Color(102, 102, 102) else Color(0, 0, 0)         // black / gray
+        1 -> if (bright) Color(255, 85, 85) else Color(205, 49, 49)        // red
+        2 -> if (bright) Color(80, 200, 120) else Color(13, 188, 121)      // green
+        3 -> if (bright) Color(245, 245, 67) else Color(229, 229, 16)      // yellow
+        4 -> if (bright) Color(95, 159, 255) else Color(36, 114, 200)      // blue
+        5 -> if (bright) Color(214, 112, 214) else Color(188, 63, 188)     // magenta
+        6 -> if (bright) Color(85, 255, 255) else Color(17, 168, 205)      // cyan
+        7 -> if (bright) Color(229, 229, 229) else Color(170, 170, 170)    // white
+        else -> Color(229, 229, 229)
     }
 
     override fun dispose() {}
