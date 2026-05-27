@@ -278,7 +278,11 @@ class LineageTab(private val project: Project, private val parentDisposable: Dis
                     downstreamDepth = selectorDownstreamDepth ?: settings.state.downstreamDepth,
                     showExposures = settings.state.showExposures,
                     expandedBoundaryNodes = expandedBoundaryNodes
-                ).copy(edgeCurveStyle = settings.state.edgeCurveStyle, layoutDirection = settings.state.layoutDirection)
+                ).copy(
+                    edgeCurveStyle = settings.state.edgeCurveStyle,
+                    layoutDirection = settings.state.layoutDirection,
+                    nodeColorMode = settings.state.nodeColorMode
+                )
 
                 val graphJson = mapper.writeValueAsString(graph)
                 val escaped = graphJson.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n")

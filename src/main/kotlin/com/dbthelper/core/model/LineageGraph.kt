@@ -7,7 +7,8 @@ data class LineageGraph(
     val hiddenUpstreamCount: Int = 0,
     val hiddenDownstreamCount: Int = 0,
     val edgeCurveStyle: String = "bezier",
-    val layoutDirection: String = "LR"
+    val layoutDirection: String = "LR",
+    val nodeColorMode: String = "resource"
 )
 
 data class LineageNode(
