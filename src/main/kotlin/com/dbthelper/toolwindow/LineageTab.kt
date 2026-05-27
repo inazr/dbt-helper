@@ -1,6 +1,8 @@
 package com.dbthelper.toolwindow
 
 import com.dbthelper.actions.DbtCommandRunner
+import com.dbthelper.actions.DbtCommandSpec
+import com.dbthelper.actions.DbtVerb
 import com.dbthelper.core.DocsPayloadBuilder
 import com.dbthelper.core.LineageGraphBuilder
 import com.dbthelper.core.ManifestService
@@ -339,7 +341,15 @@ class LineageTab(private val project: Project, private val parentDisposable: Dis
             if (!isDisposed) executeJs("setRegenerateRunning(true)")
         }
         val runner = DbtCommandRunner(project)
-        runner.runDocsGenerate(object : DbtCommandRunner.OutputListener {
+        val settings = DbtHelperSettings.getInstance(project)
+        val spec = DbtCommandSpec(
+            verb = DbtVerb.GENERATE_DOCS,
+            selector = "",
+            target = settings.state.activeTarget,
+            fullRefresh = false,
+            previewLimit = 0
+        )
+        runner.run(spec, object : DbtCommandRunner.OutputListener {
             override fun onLine(line: String) {}
             override fun onProcessStarted(process: Process) {}
             override fun onFinished(result: DbtCommandRunner.RunResult) {
