@@ -14,6 +14,21 @@
         test:         '#B39DDB',
         stub:         '#9E9E9E'
     };
+    // Categorical palette for schema-based coloring (stable, well-separated hues).
+    const SCHEMA_PALETTE = [
+        '#4E79A7', '#F28E2B', '#59A14F', '#E15759', '#B07AA1', '#76B7B2',
+        '#EDC948', '#FF9DA7', '#9C755F', '#499894', '#D37295', '#8CD17D'
+    ];
+    // Fallback for nodes without a schema (e.g. exposures) in schema mode.
+    const NEUTRAL_BAR_COLOR = '#9E9E9E';
+
+    function schemaColor(schema) {
+        var h = 0;
+        for (var i = 0; i < schema.length; i++) {
+            h = (h * 31 + schema.charCodeAt(i)) | 0;
+        }
+        return SCHEMA_PALETTE[Math.abs(h) % SCHEMA_PALETTE.length];
+    }
 
     const CARD_WIDTH = 220;
     const CARD_HEIGHT = 56;
@@ -42,7 +57,10 @@
         return 'view';
     }
 
-    function pickBarColor(node) {
+    function pickBarColor(node, colorMode) {
+        if (colorMode === 'schema') {
+            return node.schema ? schemaColor(node.schema) : NEUTRAL_BAR_COLOR;
+        }
         if (node.resourceType !== 'model') return NODE_BAR_COLORS[node.resourceType] || '#888';
         var mat = (node.materialization || 'view').toLowerCase();
         if (mat === 'table' || mat === 'incremental' || mat === 'materialized_view') return NODE_BAR_COLORS.model_table;
@@ -501,7 +519,7 @@
                         stubDirection: node.stubDirection,
                         boundaryNodeId: node.boundaryNodeId,
                         iconKey: pickIconKey(node),
-                        barColor: pickBarColor(node),
+                        barColor: pickBarColor(node, graph.nodeColorMode),
                         w: w,
                         h: h
                     }
