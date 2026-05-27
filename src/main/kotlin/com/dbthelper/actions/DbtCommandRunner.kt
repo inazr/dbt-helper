@@ -78,6 +78,30 @@ class DbtCommandRunner(private val project: Project) {
         }
     }
 
+    fun run(spec: DbtCommandSpec, listener: OutputListener) {
+        val dbt = findDbtExecutable()
+        val locator = DbtProjectLocator(project)
+        val projectRoot = locator.findProjectRoot()?.path
+
+        if (projectRoot == null) {
+            listener.onLine("ERROR: No dbt project found")
+            listener.onFinished(RunResult(-1, "", false))
+            return
+        }
+
+        val command = DbtCommandBuilder.buildArgs(spec, dbt)
+
+        runCommand(command, File(projectRoot), listener) { result ->
+            // Auto-reload manifest after commands that can change it.
+            if (result.success && spec.verb in setOf(
+                    DbtVerb.RUN, DbtVerb.BUILD, DbtVerb.GENERATE_DOCS
+                )
+            ) {
+                ManifestService.getInstance(project).reparse()
+            }
+        }
+    }
+
     fun runShow(modelName: String?, inlineSql: String?, listener: OutputListener) {
         val dbt = findDbtExecutable()
         val locator = DbtProjectLocator(project)
