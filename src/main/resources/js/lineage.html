@@ -224,6 +224,13 @@
         .card-node.stub .card-icon { display: none; }
         .card-node.stub .card-bar { display: none; }
         .card-node.stub .card-name { color: var(--stub-text); font-weight: 500; }
+        .card-node.running .card-bar {
+            animation: card-running-pulse 1.2s ease-in-out infinite;
+        }
+        @keyframes card-running-pulse {
+            0%, 100% { opacity: 1; box-shadow: 0 0 0 0 var(--card-bar-color, #5AC8FA); }
+            50%      { opacity: 0.45; box-shadow: 0 0 6px 1px var(--card-bar-color, #5AC8FA); }
+        }
 
         /* Docs sidebar */
         #docs-sidebar {
