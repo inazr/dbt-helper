@@ -1,8 +1,10 @@
-# dbt Helper
+# YADT — Yet Another dbt Tool
 
 A JetBrains IDE plugin that brings **lineage visualization**, **code intelligence**, and **command runner** for [dbt](https://www.getdbt.com/) projects.
 
 Works with **IntelliJ IDEA**, **PyCharm**, **DataSpell**, and other JetBrains IDEs (2025.1+).
+
+> Forked from [Endiruslan/dbt-helper](https://github.com/Endiruslan/dbt-helper), licensed under MIT.
 
 ---
 
@@ -34,10 +36,10 @@ Works with **IntelliJ IDEA**, **PyCharm**, **DataSpell**, and other JetBrains ID
 
 1. Open a project containing `dbt_project.yml`
 2. The plugin auto-detects your dbt project root and parses `target/manifest.json`
-3. Open the **dbt Helper** tool window (bottom panel)
+3. Open the **YADT** tool window (bottom panel)
 
 ### Settings
-**Settings** → **Tools** → **dbt Helper**
+**Settings** → **Tools** → **YADT**
 
 | Setting | Description | Default |
 |---------|-------------|---------|

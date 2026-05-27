@@ -1,4 +1,4 @@
-rootProject.name = "dbt-helper"
+rootProject.name = "yadt"
 
 pluginManagement {
     repositories {

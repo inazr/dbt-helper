@@ -5,7 +5,7 @@ import com.intellij.openapi.options.BoundConfigurable
 import com.intellij.openapi.project.Project
 import com.intellij.ui.dsl.builder.*
 
-class DbtHelperConfigurable(private val project: Project) : BoundConfigurable("dbt Helper") {
+class DbtHelperConfigurable(private val project: Project) : BoundConfigurable("YADT") {
 
     private val settings get() = DbtHelperSettings.getInstance(project)
 

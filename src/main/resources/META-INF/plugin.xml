@@ -1,9 +1,9 @@
 <idea-plugin>
-    <id>com.dbthelper</id>
-    <name>dbt Helper</name>
-    <vendor email="endiruslan@gmail.com" url="https://github.com/Endiruslan/dbt-helper">Endiruslan</vendor>
+    <id>com.inazr.yadt</id>
+    <name>YADT — Yet Another dbt Tool</name>
+    <vendor email="yadt@stephan-ohm.com" url="https://github.com/inazr/dbt-helper">inazr</vendor>
     <description><![CDATA[
-<h2>dbt Helper — Lineage, Code Intelligence & Runner for dbt</h2>
+<h2>YADT — Lineage, Code Intelligence & Runner for dbt</h2>
 
 <p>A powerful plugin that brings <b>lineage visualization</b>, <b>code intelligence</b>, and a <b>command runner</b>
 for <a href="https://www.getdbt.com/">dbt</a> projects directly into your JetBrains IDE.</p>
@@ -90,7 +90,7 @@ for <a href="https://www.getdbt.com/">dbt</a> projects directly into your JetBra
         <projectService serviceImplementation="com.dbthelper.core.ProfilesParser"/>
 
         <!-- Tool Window -->
-        <toolWindow id="dbt Helper"
+        <toolWindow id="YADT"
                     anchor="bottom"
                     sideToolWindow="true"
                     icon="/icons/dbt.svg"
@@ -101,7 +101,7 @@ for <a href="https://www.getdbt.com/">dbt</a> projects directly into your JetBra
                 parentId="tools"
                 instance="com.dbthelper.settings.DbtHelperConfigurable"
                 id="com.dbthelper.settings.DbtHelperConfigurable"
-                displayName="dbt Helper"/>
+                displayName="YADT"/>
 
         <!-- Code Intelligence (TEXT = IntelliJ IDEA, Jinja2/SQL = DataSpell/PyCharm) -->
         <completion.contributor language="any"
@@ -139,7 +139,7 @@ for <a href="https://www.getdbt.com/">dbt</a> projects directly into your JetBra
         <gotoDeclarationHandler implementation="com.dbthelper.codeintel.DbtGotoDeclarationHandler"/>
 
         <!-- Notifications -->
-        <notificationGroup id="dbt Helper" displayType="BALLOON"/>
+        <notificationGroup id="YADT" displayType="BALLOON"/>
     </extensions>
 
     <actions>

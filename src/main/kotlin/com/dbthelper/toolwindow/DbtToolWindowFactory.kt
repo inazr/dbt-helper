@@ -10,7 +10,7 @@ import com.intellij.ui.content.ContentFactory
 class DbtToolWindowFactory : ToolWindowFactory, DumbAware {
 
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
-        // Hide the bold "dbt Helper" id label the platform renders before the content.
+        // Hide the bold "YADT" id label the platform renders before the content.
         // DbtMainPanel provides its own action bar at the top.
         toolWindow.component.putClientProperty(ToolWindowContentUi.HIDE_ID_LABEL, "true")
 

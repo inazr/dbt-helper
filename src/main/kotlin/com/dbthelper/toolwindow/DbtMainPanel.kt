@@ -160,12 +160,12 @@ class DbtMainPanel(
 
     private fun notify(content: String, type: NotificationType) {
         NotificationGroupManager.getInstance()
-            .getNotificationGroup("dbt Helper")
+            .getNotificationGroup("YADT")
             .createNotification(content, type)
             .notify(project)
         if (DbtHelperSettings.getInstance(project).state.enableSystemNotifications) {
-            val title = if (type == NotificationType.ERROR) "dbt Error" else "dbt Helper"
-            com.intellij.ui.SystemNotifications.getInstance().notify("dbt-helper", title, content)
+            val title = if (type == NotificationType.ERROR) "dbt Error" else "YADT"
+            com.intellij.ui.SystemNotifications.getInstance().notify("yadt", title, content)
         }
     }
 

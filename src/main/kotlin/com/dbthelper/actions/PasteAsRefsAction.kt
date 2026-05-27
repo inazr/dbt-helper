@@ -33,7 +33,7 @@ class PasteAsRefsAction : AnAction("Paste as dbt Refs") {
         val index = ManifestService.getInstance(project).getIndex()
         if (index === ManifestIndex.EMPTY) {
             NotificationGroupManager.getInstance()
-                .getNotificationGroup("dbt Helper")
+                .getNotificationGroup("YADT")
                 .createNotification(
                     "dbt manifest not loaded. Run 'dbt parse' or 'dbt compile' to generate target/manifest.json.",
                     NotificationType.WARNING

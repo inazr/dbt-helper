@@ -20,7 +20,7 @@ class DbtFileListener(private val project: Project) : FileEditorManagerListener 
         val manifestService = ManifestService.getInstance(project)
         val modelId = manifestService.findCurrentModelId(file)
         if (modelId != null) {
-            val toolWindow = ToolWindowManager.getInstance(project).getToolWindow("dbt Helper")
+            val toolWindow = ToolWindowManager.getInstance(project).getToolWindow("YADT")
             toolWindow?.show()
         }
 
