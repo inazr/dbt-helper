@@ -82,13 +82,25 @@ class DbtHelperConfigurable(private val project: Project) : BoundConfigurable("d
                     )
             }
             row("Node color:") {
-                val nodeColorModes = listOf("Resource type", "Schema name")
+                val nodeColorModes = listOf("Resource type", "Schema name", "Status")
                 comboBox(nodeColorModes)
                     .bindItem(
-                        { if (settings.state.nodeColorMode == "schema") "Schema name" else "Resource type" },
-                        { settings.state.nodeColorMode = if (it == "Schema name") "schema" else "resource" }
+                        {
+                            when (settings.state.nodeColorMode) {
+                                "schema" -> "Schema name"
+                                "status" -> "Status"
+                                else -> "Resource type"
+                            }
+                        },
+                        {
+                            settings.state.nodeColorMode = when (it) {
+                                "Schema name" -> "schema"
+                                "Status" -> "status"
+                                else -> "resource"
+                            }
+                        }
                     )
-                    .comment("How lineage node colors are derived")
+                    .comment("How lineage node colors are derived. \"Status\" colors nodes by their last dbt run result.")
             }
 }
 

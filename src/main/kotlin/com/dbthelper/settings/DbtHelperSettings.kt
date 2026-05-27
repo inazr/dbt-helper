@@ -24,7 +24,7 @@ class DbtHelperSettings : PersistentStateComponent<DbtHelperSettings.State> {
         var previewRowLimit: Int = 10,
         var enableSystemNotifications: Boolean = true,
         var enableColoredOutput: Boolean = false,
-        // How lineage node bar colors are derived: "resource" | "schema".
+        // How lineage node bar colors are derived: "resource" | "schema" | "status".
         var nodeColorMode: String = "resource",
         // Bumped when a settings default changes so loadState can migrate old data.
         // Absent in pre-migration saved files, so it deserializes to 0 there.
