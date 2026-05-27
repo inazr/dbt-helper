@@ -2,7 +2,9 @@ package com.dbthelper.toolwindow
 
 import com.dbthelper.actions.DbtCommandRunner
 import com.dbthelper.actions.DbtCommandSpec
+import com.dbthelper.actions.DbtRunStatusParser
 import com.dbthelper.actions.DbtVerb
+import com.dbthelper.actions.RunResultsReconciler
 import com.dbthelper.core.DocsPayloadBuilder
 import com.dbthelper.core.LineageGraphBuilder
 import com.dbthelper.core.ManifestService
@@ -59,6 +61,11 @@ class LineageTab(private val project: Project, private val parentDisposable: Dis
 
     // Expanded boundary nodes (not persisted to settings)
     private val expandedBoundaryNodes = mutableSetOf<String>()
+
+    // Buildable node ids (model/seed/snapshot) of the most recently rendered graph;
+    // used to seed "queued" at GO. Updated on every refreshGraph().
+    @Volatile
+    private var lastBuildableNodeIds: List<String> = emptyList()
 
     init {
         Disposer.register(parentDisposable, this)
@@ -284,6 +291,10 @@ class LineageTab(private val project: Project, private val parentDisposable: Dis
                     nodeColorMode = settings.state.nodeColorMode
                 )
 
+                lastBuildableNodeIds = graph.nodes
+                    .filter { it.resourceType in RunResultsReconciler.BUILDABLE_TYPES }
+                    .map { it.id }
+
                 val graphJson = mapper.writeValueAsString(graph)
                 val escaped = graphJson.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n")
 
@@ -358,6 +369,23 @@ class LineageTab(private val project: Project, private val parentDisposable: Dis
         }
     }
 
+    /**
+     * Build { "schema.identifier" / "database.schema.identifier" -> uniqueId }
+     * for all buildable nodes, for resolving dbt log relations to unique ids.
+     */
+    private fun buildRelationKeyIndex(index: ManifestIndex): Map<String, String> {
+        val map = HashMap<String, String>()
+        for ((id, node) in index.nodes) {
+            if (node.resourceType !in RunResultsReconciler.BUILDABLE_TYPES) continue
+            val schema = node.schema ?: continue
+            val identifier = node.alias ?: node.name
+            map["$schema.$identifier".lowercase()] = id
+            val db = node.database
+            if (db != null) map["$db.$schema.$identifier".lowercase()] = id
+        }
+        return map
+    }
+
     @Volatile
     private var regenerateRunning = false
 
@@ -409,6 +437,54 @@ class LineageTab(private val project: Project, private val parentDisposable: Dis
         expandedBoundaryNodes.add(boundaryNodeId)
         refreshGraph()
     }
+
+    /** Called at GO: clear statuses and mark all buildable graph nodes as queued. */
+    fun beginRunStatus() {
+        if (isDisposed) return
+        val queued = lastBuildableNodeIds.associateWith { "queued" }
+        val json = mapper.writeValueAsString(queued)
+        val escaped = escapeJsJson(json)
+        ApplicationManager.getApplication().invokeLater {
+            if (isDisposed) return@invokeLater
+            executeJs("clearNodeStatuses()")
+            if (queued.isNotEmpty()) executeJs("setNodeStatuses('$escaped')")
+        }
+    }
+
+    /** Feed one runner output line; live-update the matching node's status. */
+    fun onRunnerLine(line: String) {
+        if (isDisposed) return
+        val update = DbtRunStatusParser.parseLine(line) ?: return
+        ApplicationManager.getApplication().executeOnPooledThread {
+            if (isDisposed) return@executeOnPooledThread
+            val index = ManifestService.getInstance(project).getIndex()
+            val uniqueId = buildRelationKeyIndex(index)[update.relationKey] ?: return@executeOnPooledThread
+            val json = mapper.writeValueAsString(mapOf(uniqueId to update.status))
+            val escaped = escapeJsJson(json)
+            ApplicationManager.getApplication().invokeLater {
+                if (!isDisposed) executeJs("setNodeStatuses('$escaped')")
+            }
+        }
+    }
+
+    /** Called at run end: push authoritative statuses from target/run_results.json. */
+    fun applyRunResults() {
+        if (isDisposed) return
+        ApplicationManager.getApplication().executeOnPooledThread {
+            if (isDisposed) return@executeOnPooledThread
+            val service = ManifestService.getInstance(project)
+            val dbtRoot = service.getLocator().findProjectRoot() ?: return@executeOnPooledThread
+            val statuses = RunResultsReconciler.reconcile(java.io.File(dbtRoot.path), service.getIndex())
+            val json = mapper.writeValueAsString(statuses)
+            val escaped = escapeJsJson(json)
+            ApplicationManager.getApplication().invokeLater {
+                if (!isDisposed) executeJs("applyRunResults('$escaped')")
+            }
+        }
+    }
+
+    private fun escapeJsJson(json: String): String =
+        json.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n")
 
     private fun executeJs(code: String) {
         if (!isDisposed) {

@@ -43,6 +43,7 @@ class DbtMainPanel(
     private var runGeneration = 0
 
     private val timestampRegex = Regex("^\\d{2}:\\d{2}:\\d{2}.*")
+    private val statusVerbs = setOf(DbtVerb.RUN, DbtVerb.BUILD, DbtVerb.TEST)
 
     init {
         Disposer.register(parentDisposable, this)
@@ -104,12 +105,14 @@ class DbtMainPanel(
         actionBar.setRunning(true)
         tabs.selectedComponent = runnerTab
         runnerTab.clear()
+        if (spec.verb in statusVerbs) lineageTab.beginRunStatus()
 
         val runner = DbtCommandRunner(project)
         runner.run(spec, object : DbtCommandRunner.OutputListener {
             override fun onProcessStarted(process: Process) { currentProcess = process }
 
             override fun onLine(line: String) {
+                if (spec.verb in statusVerbs) lineageTab.onRunnerLine(line)
                 if (spec.verb == DbtVerb.PREVIEW) {
                     if (line.startsWith("$") || line.startsWith("Previewing") ||
                         line.startsWith("ERROR") || line.matches(timestampRegex)
@@ -125,6 +128,7 @@ class DbtMainPanel(
                     isRunning = false
                     currentProcess = null
                     actionBar.setRunning(false)
+                    if (spec.verb in statusVerbs) lineageTab.applyRunResults()
 
                     if (spec.verb == DbtVerb.PREVIEW && result.success) {
                         val table = runnerTab.formatPreviewTable(result.output)
