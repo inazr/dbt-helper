@@ -135,12 +135,25 @@ bleiben die Farben nach dem Re-Render automatisch erhalten.
    `relationKey → uniqueId` aufgelöst und (gebatcht) an
    `lineageTab.pushNodeStatus(uniqueId, status)` übergeben. Marshalling auf den
    EDT vor `executeJs` (analog zu bestehendem `pushDocsToSidebar`).
-3. **Run-Ende** (`onFinished`) → `target/run_results.json` lesen,
-   `unique_id → status` autoritativ bestimmen, als finalen Voll-Push an
-   `lineageTab.applyRunResults(map)`. Korrigiert alle Live-Mapping-Fehler.
-   - `run_results.json`-Status-Mapping: `success`/`pass` → `success`,
+3. **Run-Ende** (`onFinished`) → `target/run_results.json` lesen und einen
+   finalen Voll-Reconcile an `lineageTab.applyRunResults(...)` schicken.
+   Korrigiert alle Live-Mapping-Fehler und ist die autoritative Quelle für
+   den Endzustand:
+   - **Status-Mapping** der dbt-Result-Status: `success`/`pass` → `success`,
      `warn` → `warn`, `error`/`fail`/`runtime error` → `error`,
      `skipped` → `skipped`.
+   - **Modell-/Seed-/Snapshot-Results** färben ihre Node direkt.
+   - **Test-Results** werden über `depends_on` (bzw. `parentMap`) auf das/die
+     getestete(n) Modell(e) zurückgeführt und dort aggregiert.
+   - **„Worst status wins":** Pro Node-Karte gewinnt der schlimmste Status aus
+     allen Beiträgen (eigenes Build-Result + Test-Rollups). Rangfolge:
+     `error > warn > success > skipped`. So spiegelt eine Modellkarte bei
+     `build` sowohl einen Build-Fehler als auch einen fehlgeschlagenen Test
+     wider, und bei reinem `test` das aggregierte Testergebnis.
+   - **Queued-Rückkorrektur:** Nodes, die beim GO auf `queued` gesetzt wurden,
+     aber in `run_results.json` nicht (direkt oder via Test-Rollup) vorkommen,
+     werden auf **Neutral** zurückgesetzt (Status gelöscht) — sie wurden nicht
+     ausgewertet.
 
 ## Edge Cases / Nicht-Ziele
 
@@ -151,12 +164,14 @@ bleiben die Farben nach dem Re-Render automatisch erhalten.
   Status-Modus ist; sichtbar, sobald er im Combo auf "Status" wechselt
   (Settings-Apply → `SettingsChangeListener` → `refreshGraph` → `renderGraph`
   mit `nodeColorMode='status'`).
-- Tests bekommen keine eigene Karte (bestehendes Verhalten); ihre
-  `PASS/WARN/ERROR`-Zeilen färben nichts direkt — der Endzustand des Modells
-  kommt über `run_results.json`.
-- Nodes außerhalb des Run-Sets, die beim GO blau wurden, können blau bleiben,
-  falls dbt sie nie meldet. `run_results.json` enthält nur tatsächlich
-  ausgewertete Nodes, korrigiert diese also nicht aktiv zurück — akzeptiert.
+- Tests bekommen keine eigene Karte (bestehendes Verhalten). Live (Stdout) ist
+  das Test-Mapping unzuverlässig, da dbt Test-Zeilen nach Testnamen statt
+  `schema.identifier` druckt — Test-Ergebnisse werden daher **nur über
+  `run_results.json`** auf die Modellkarte(n) aggregiert (s. Datenfluss 3).
+  Bei `dbt test -s mein_modell` bleibt die Modellkarte also bis zum Run-Ende
+  `queued` (blau) und färbt sich dann auf das aggregierte Testergebnis.
+- Nodes, die beim GO blau wurden, dbt aber nie auswertet, werden am Run-Ende
+  über die Queued-Rückkorrektur auf Neutral zurückgesetzt (s. Datenfluss 3).
 
 ## Betroffene Dateien
 
