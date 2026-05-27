@@ -224,6 +224,17 @@ class LineageTab(private val project: Project, private val parentDisposable: Dis
         }
     }
 
+    /** Focus the graph on a plain model name (no-op if it doesn't resolve). */
+    fun focusModel(modelName: String) {
+        if (isDisposed) return
+        val modelId = ManifestService.getInstance(project).findModelIdByName(modelName) ?: return
+        if (modelId != currentModelId) {
+            currentModelId = modelId
+            expandedBoundaryNodes.clear()
+            refreshGraph()
+        }
+    }
+
     fun refreshGraph() {
         val modelId = currentModelId ?: return
         if (!isPageReady || isDisposed) return

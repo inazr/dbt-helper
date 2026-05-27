@@ -138,6 +138,15 @@ class ManifestService(private val project: Project) : Disposable {
         return cachedIndex.findByFilePath(relativePath)
     }
 
+    /** Resolve a plain dbt model name to its node uniqueId, or null if not found. */
+    fun findModelIdByName(modelName: String): String? {
+        val target = modelName.trim()
+        if (target.isEmpty()) return null
+        return getIndex().nodes.values
+            .firstOrNull { it.resourceType == "model" && it.name == target }
+            ?.uniqueId
+    }
+
     private fun parseNodes(nodesNode: JsonNode?): Map<String, DbtNode> {
         if (nodesNode == null) return emptyMap()
         val result = mutableMapOf<String, DbtNode>()
