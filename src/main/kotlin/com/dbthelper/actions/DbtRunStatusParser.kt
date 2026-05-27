@@ -19,7 +19,8 @@ object DbtRunStatusParser {
 
     data class NodeStatusUpdate(val relationKey: String, val status: String)
 
-    private val ansiRegex = Regex("\\[[0-9;]*m")
+    // Strip ANSI SGR sequences (ESC [ <params> m) — same shape as DbtRunnerTab.
+    private val ansiRegex = Regex("\\u001B\\[[0-9;]*m")
 
     // "<n> of <m> <PHASE>" then the rest of the line.
     private val phaseRegex = Regex("""\b\d+ of \d+ ([A-Z]+)\b(.*)""")
