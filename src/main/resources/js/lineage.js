@@ -22,6 +22,16 @@
     // Fallback for nodes without a schema (e.g. exposures) in schema mode.
     const NEUTRAL_BAR_COLOR = '#9E9E9E';
 
+    // Run-status colors (used when nodeColorMode === 'status'). Set live from Kotlin.
+    const STATUS_BAR_COLORS = {
+        queued:  '#3F7BD9',
+        running: '#5AC8FA',
+        success: '#3FB950',
+        warn:    '#E3B341',
+        error:   '#F85149',
+        skipped: '#C9CED6'
+    };
+
     function schemaColor(schema) {
         var h = 0;
         for (var i = 0; i < schema.length; i++) {
@@ -58,6 +68,10 @@
     }
 
     function pickBarColor(node, colorMode) {
+        if (colorMode === 'status') {
+            var st = nodeStatus[node.id];
+            return (st && STATUS_BAR_COLORS[st]) || NEUTRAL_BAR_COLOR;
+        }
         if (colorMode === 'schema') {
             return node.schema ? schemaColor(node.schema) : NEUTRAL_BAR_COLOR;
         }
@@ -72,6 +86,8 @@
     let currentLayoutDir = 'LR';
     let previousNodeIds = new Set();
     let nodeCards = {};
+    let currentColorMode = 'resource';
+    let nodeStatus = {}; // uniqueId -> status string (see STATUS_BAR_COLORS keys)
     let activeDrag = null;
 
     window.addEventListener('mousemove', function (e) {
@@ -186,6 +202,9 @@
                 card.appendChild(name);
             } else {
                 card.style.setProperty('--card-bar-color', data.barColor);
+                if (currentColorMode === 'status' && nodeStatus[data.id] === 'running') {
+                    card.classList.add('running');
+                }
 
                 var bar = document.createElement('div');
                 bar.className = 'card-bar';
@@ -493,9 +512,49 @@
 
     // === Public API (called from Kotlin) ===
 
+    // Recolor a single card from its current nodeStatus entry (status mode only).
+    function applyStatusToCard(id) {
+        var card = nodeCards[id];
+        if (!card || card.classList.contains('stub')) return;
+        var st = nodeStatus[id];
+        card.style.setProperty('--card-bar-color', (st && STATUS_BAR_COLORS[st]) || NEUTRAL_BAR_COLOR);
+        card.classList.toggle('running', st === 'running');
+    }
+
+    // Repaint every card from nodeStatus (status mode only). Not a graph re-render.
+    function repaintAllStatusCards() {
+        Object.keys(nodeCards).forEach(applyStatusToCard);
+    }
+
+    // Merge {uniqueId: status} into the store; live-update cards if in status mode.
+    window.setNodeStatuses = function (jsonStr) {
+        try {
+            var map = typeof jsonStr === 'string' ? JSON.parse(jsonStr) : jsonStr;
+            Object.keys(map).forEach(function (id) { nodeStatus[id] = map[id]; });
+            if (currentColorMode === 'status') {
+                Object.keys(map).forEach(applyStatusToCard);
+            }
+        } catch (e) { console.error('setNodeStatuses error:', e); }
+    };
+
+    // Replace the store wholesale (authoritative final state). Absent ids -> neutral.
+    window.applyRunResults = function (jsonStr) {
+        try {
+            nodeStatus = typeof jsonStr === 'string' ? JSON.parse(jsonStr) : jsonStr;
+            if (currentColorMode === 'status') repaintAllStatusCards();
+        } catch (e) { console.error('applyRunResults error:', e); }
+    };
+
+    // Clear all statuses (called at GO before seeding queued).
+    window.clearNodeStatuses = function () {
+        nodeStatus = {};
+        if (currentColorMode === 'status') repaintAllStatusCards();
+    };
+
     window.renderGraph = function (jsonStr) {
         try {
             const graph = typeof jsonStr === 'string' ? JSON.parse(jsonStr) : jsonStr;
+            currentColorMode = graph.nodeColorMode || 'resource';
             const elements = [];
 
             for (const node of graph.nodes) {
