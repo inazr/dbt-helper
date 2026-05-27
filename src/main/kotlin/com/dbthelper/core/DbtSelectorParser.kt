@@ -6,7 +6,7 @@ package com.dbthelper.core
  * name, and an optional downstream operator (`+` or `+N`).
  *
  * Examples:
- *  - `my_model`      → Focus("my_model", 2, 1)              — plain name, default focused view
+ *  - `my_model`      → Focus("my_model", null, null)        — plain name, caller uses default depth
  *  - `+my_model`     → Focus("my_model", UNLIMITED, 0)      — all ancestors, no descendants
  *  - `my_model+`     → Focus("my_model", 0, UNLIMITED)
  *  - `+my_model+`    → Focus("my_model", UNLIMITED, UNLIMITED)
@@ -27,13 +27,6 @@ object DbtSelectorParser {
      */
     const val UNLIMITED: Int = 1000
 
-    /**
-     * Default focused-view depth for a plain model name (no operators): a tight
-     * neighborhood rather than the whole pipeline. Graph operators override these.
-     */
-    const val DEFAULT_UPSTREAM: Int = 2
-    const val DEFAULT_DOWNSTREAM: Int = 1
-
     /** A resolved selector focus. A null depth means "use the caller's default". */
     data class Focus(val modelName: String, val upstreamDepth: Int?, val downstreamDepth: Int?)
 
@@ -52,8 +45,8 @@ object DbtSelectorParser {
         val hasUp = upGroup != null
         val hasDown = downGroup != null
 
-        // Plain name with no operators: show a tight default neighborhood (2 up, 1 down).
-        if (!hasUp && !hasDown) return Focus(name, DEFAULT_UPSTREAM, DEFAULT_DOWNSTREAM)
+        // Plain name with no operators: let the caller decide depth (settings default).
+        if (!hasUp && !hasDown) return Focus(name, null, null)
 
         // With operators, the side that has no operator is excluded (depth 0), and a
         // bare "+" (empty digits) means unlimited.
