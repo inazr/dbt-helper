@@ -143,6 +143,55 @@ class DbtActionBar(private val project: Project) : JPanel(BorderLayout()) {
         updateGoEnabled()
     }
 
+    fun isRunning(): Boolean = running
+
+    fun currentTarget(): String = (targetCombo.selectedItem as? String).orEmpty()
+
+    /**
+     * Pre-fill the selector field with [selector] and trigger GO using the
+     * currently configured verb, target, flags, and extra-args. No-op if a run
+     * is already in progress (caller should use [promptToCancelAndRetry]).
+     */
+    fun goWithSelector(selector: String) {
+        if (running) return
+        setSelector(selector)
+        goButton.doClick()
+    }
+
+    /**
+     * Run an arbitrary [DbtCommandSpec], bypassing the verb dropdown. Used by
+     * "Show preview rows" so the user does not lose their configured verb.
+     */
+    fun runSpec(spec: com.dbthelper.actions.DbtCommandSpec) {
+        if (running) return
+        onGo?.invoke(spec)
+    }
+
+    /**
+     * If no run is in progress, behave like [goWithSelector]. Otherwise, prompt
+     * the user to cancel the current run and start a new one with [selector].
+     */
+    fun promptToCancelAndRetry(parent: java.awt.Component, selector: String) {
+        if (!running) { goWithSelector(selector); return }
+        val choice = com.intellij.openapi.ui.Messages.showYesNoDialog(
+            parent,
+            "A run is in progress. Cancel current run and start a new one?",
+            "Run In Progress",
+            com.intellij.openapi.ui.Messages.getQuestionIcon()
+        )
+        if (choice == com.intellij.openapi.ui.Messages.YES) {
+            onStop?.invoke()
+            val timer = javax.swing.Timer(200, null)
+            timer.addActionListener {
+                if (!running) {
+                    timer.stop()
+                    goWithSelector(selector)
+                }
+            }
+            timer.start()
+        }
+    }
+
     fun refreshTargets() {
         val settings = DbtHelperSettings.getInstance(project)
         val profiles = ProfilesParser.getInstance(project)
