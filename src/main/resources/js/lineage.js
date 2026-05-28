@@ -1440,6 +1440,37 @@
         searchInput.focus();
     });
 
+    (function () {
+        var btn = document.getElementById('search-help');
+        if (!btn) return;
+        var popup = null;
+        btn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            if (popup) { popup.remove(); popup = null; return; }
+            popup = document.createElement('div');
+            popup.className = 'help-popup';
+            // Note: the HTML here is built from constant strings (no user input).
+            popup.innerHTML = '' +
+                '<div style="margin-bottom: 4px;"><b>Search syntax</b></div>' +
+                '<table>' +
+                '<tr><td class="k">name</td><td>Match name/id (default)</td></tr>' +
+                '<tr><td class="k">col:name</td><td>Models with column matching name</td></tr>' +
+                '<tr><td class="k">tag:value</td><td>Models with tag</td></tr>' +
+                '<tr><td class="k">schema:name</td><td>Models in schema</td></tr>' +
+                '<tr><td class="k">mat:type</td><td>Materialization (table, view, incremental, …)</td></tr>' +
+                '<tr><td class="k">type:kind</td><td>Resource type (model, source, seed, …)</td></tr>' +
+                '<tr><td class="k">pkg:name</td><td>Package name</td></tr>' +
+                '</table>';
+            document.body.appendChild(popup);
+            var r = btn.getBoundingClientRect();
+            popup.style.left = (r.left) + 'px';
+            popup.style.top = (r.bottom + 4) + 'px';
+        });
+        document.addEventListener('click', function () {
+            if (popup) { popup.remove(); popup = null; }
+        });
+    })();
+
     // Signal ready
     window.addEventListener('DOMContentLoaded', function () {
         setTimeout(function () {
