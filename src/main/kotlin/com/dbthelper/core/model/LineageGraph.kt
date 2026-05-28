@@ -8,7 +8,8 @@ data class LineageGraph(
     val hiddenDownstreamCount: Int = 0,
     val edgeCurveStyle: String = "bezier",
     val layoutDirection: String = "LR",
-    val nodeColorMode: String = "resource"
+    val nodeColorMode: String = "resource",
+    val catalogAvailable: Boolean = false
 )
 
 data class LineageNode(
@@ -24,7 +25,8 @@ data class LineageNode(
     val depth: Int,
     val isCurrent: Boolean = false,
     val stubDirection: String? = null,
-    val boundaryNodeId: String? = null
+    val boundaryNodeId: String? = null,
+    val searchHints: com.dbthelper.core.SearchHints? = null
 )
 
 data class ColumnNode(

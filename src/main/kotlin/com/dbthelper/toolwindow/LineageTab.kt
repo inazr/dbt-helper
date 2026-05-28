@@ -401,7 +401,8 @@ class LineageTab(
                 if (index === ManifestIndex.EMPTY) return@executeOnPooledThread
 
                 val settings = DbtHelperSettings.getInstance(project)
-                val builder = LineageGraphBuilder(index, project)
+                val catalogAvailable = service.getLocator().getCatalogFile() != null
+                val builder = LineageGraphBuilder(index, project, catalogAvailable)
                 val graph = builder.build(
                     currentNodeId = modelId,
                     upstreamDepth = selectorUpstreamDepth ?: settings.state.upstreamDepth,

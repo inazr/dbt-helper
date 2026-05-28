@@ -134,6 +134,35 @@
             text-align: center;
         }
         #search-clear:hover { color: var(--btn-text); }
+        .help-icon {
+            background: transparent;
+            border: 1px solid var(--btn-border);
+            border-radius: 50%;
+            width: 18px;
+            height: 18px;
+            line-height: 14px;
+            padding: 0;
+            margin-left: 4px;
+            color: var(--btn-text);
+            cursor: help;
+            font-size: 11px;
+            vertical-align: middle;
+        }
+        .help-icon:hover { background: var(--btn-hover); }
+        .help-popup {
+            position: absolute;
+            background: var(--tooltip-bg);
+            color: var(--tooltip-text);
+            border: 1px solid var(--tooltip-border);
+            padding: 8px 10px;
+            border-radius: 6px;
+            font-size: 11px;
+            max-width: 320px;
+            z-index: 1000;
+        }
+        .help-popup table { border-collapse: collapse; }
+        .help-popup td { padding: 2px 6px; vertical-align: top; }
+        .help-popup td.k { color: var(--tooltip-name); font-family: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace; }
 
         /* HTML node overlay */
         #node-overlay {
@@ -561,6 +590,7 @@
     <div id="search-box">
         <input id="search-input" type="text" placeholder="Search nodes..." />
         <button id="search-clear" title="Clear">&times;</button>
+        <button id="search-help" class="help-icon" title="Search syntax">?</button>
     </div>
     <div id="run-results-hint" class="run-results-hint" style="display: none"></div>
     <div id="controls">
