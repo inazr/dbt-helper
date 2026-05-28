@@ -153,6 +153,30 @@
     var pendingClickTimer = null;
     var lastClickedId = null;
 
+    var hoverActive = false;
+    function applyHoverHighlight(nodeId) {
+        if (!cy) return;
+        // Disable hover-highlight when other state is active.
+        if (lastClickedId === nodeId) return; // single-click neighborhood dim
+        var hasSearchDim = false;
+        cy.edges().some(function (e) {
+            if (e.hasClass('dimmed')) { hasSearchDim = true; return true; }
+            return false;
+        });
+        if (hasSearchDim) return;
+        var node = cy.getElementById(nodeId);
+        if (!node.length) return;
+        var incident = node.connectedEdges();
+        incident.addClass('hot');
+        cy.edges().not(incident).addClass('cold');
+        hoverActive = true;
+    }
+    function clearHoverHighlight() {
+        if (!cy || !hoverActive) return;
+        cy.edges().removeClass('hot').removeClass('cold');
+        hoverActive = false;
+    }
+
     function dimToNeighborhood(nodeId) {
         if (!cy) return;
         var center = cy.getElementById(nodeId);
@@ -288,6 +312,7 @@
             });
             card.addEventListener('mouseenter', function (e) {
                 if (activeDrag) return;
+                applyHoverHighlight(data.id);
                 showTooltip({ x: e.clientX, y: e.clientY }, data);
             });
             card.addEventListener('mousemove', function (e) {
@@ -295,6 +320,7 @@
                 moveTooltip({ x: e.clientX, y: e.clientY });
             });
             card.addEventListener('mouseleave', function () {
+                clearHoverHighlight();
                 hideTooltip();
             });
 
@@ -371,6 +397,21 @@
                         'target-arrow-shape': 'triangle',
                         'curve-style': edgeCurveStyle || 'bezier',
                         'arrow-scale': 0.8
+                    }
+                },
+                {
+                    selector: 'edge.hot',
+                    style: {
+                        'opacity': 1,
+                        'width': 2.5,
+                        'line-color': '#4E79A7',
+                        'target-arrow-color': '#4E79A7'
+                    }
+                },
+                {
+                    selector: 'edge.cold',
+                    style: {
+                        'opacity': 0.1
                     }
                 },
                 {
