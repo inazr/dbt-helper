@@ -40,7 +40,7 @@ class DbtMainPanel(
 
     private val actionBar = DbtActionBar(project)
     private val tabs = JBTabbedPane()
-    private val lineageTab = LineageTab(project, this)
+    private val lineageTab = LineageTab(project, this, actionBar)
     private val runnerTab = DbtRunnerTab(project, this)
 
     @Volatile private var currentProcess: Process? = null

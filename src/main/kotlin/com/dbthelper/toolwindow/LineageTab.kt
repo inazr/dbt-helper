@@ -35,7 +35,11 @@ import java.awt.BorderLayout
 import javax.swing.JPanel
 import javax.swing.UIManager
 
-class LineageTab(private val project: Project, private val parentDisposable: Disposable) : JPanel(BorderLayout()), Disposable {
+class LineageTab(
+    private val project: Project,
+    private val parentDisposable: Disposable,
+    private val actionBar: DbtActionBar? = null
+) : JPanel(BorderLayout()), Disposable {
 
     private val logger = Logger.getInstance(LineageTab::class.java)
     private val mapper = ObjectMapper().registerModule(KotlinModule.Builder().build())
@@ -163,6 +167,32 @@ class LineageTab(private val project: Project, private val parentDisposable: Dis
                         handleExpandRequest(boundaryNodeId, direction)
                     }
                     "regenerateDocs" -> handleRegenerateDocs()
+                    "contextMenuRequest" -> {
+                        val payloadObj = payload ?: return@addHandler JBCefJSQuery.Response("ok")
+                        @Suppress("UNCHECKED_CAST")
+                        val nodeIds = mapper.convertValue(payloadObj.get("nodeIds"), List::class.java)
+                            ?.filterIsInstance<String>() ?: emptyList()
+                        @Suppress("UNCHECKED_CAST")
+                        val names = mapper.convertValue(payloadObj.get("names"), List::class.java)
+                            ?.filterIsInstance<String>() ?: emptyList()
+                        @Suppress("UNCHECKED_CAST")
+                        val resourceTypes = mapper.convertValue(payloadObj.get("resourceTypes"), List::class.java)
+                            ?.map { it as? String } ?: emptyList()
+                        val screenX = payloadObj.get("screenX")?.asInt() ?: return@addHandler JBCefJSQuery.Response("ok")
+                        val screenY = payloadObj.get("screenY")?.asInt() ?: return@addHandler JBCefJSQuery.Response("ok")
+                        if (nodeIds.isEmpty()) return@addHandler JBCefJSQuery.Response("ok")
+                        ApplicationManager.getApplication().invokeLater {
+                            if (!isDisposed) showContextPopup(nodeIds, names, resourceTypes, screenX, screenY)
+                        }
+                    }
+                    "multiSelectChanged" -> {
+                        val count = payload?.get("count")?.asInt() ?: 0
+                        if (count > 1) {
+                            ApplicationManager.getApplication().invokeLater {
+                                if (!isDisposed) executeJs("showMultiSelectPlaceholder($count)")
+                            }
+                        }
+                    }
                 }
                 JBCefJSQuery.Response("ok")
             } catch (e: Exception) {
@@ -529,6 +559,25 @@ class LineageTab(private val project: Project, private val parentDisposable: Dis
         }
         expandedBoundaryNodes.add(boundaryNodeId)
         refreshGraph()
+    }
+
+    private fun showContextPopup(
+        nodeIds: List<String>,
+        names: List<String>,
+        resourceTypes: List<String?>,
+        screenX: Int,
+        screenY: Int
+    ) {
+        val bar = actionBar ?: return
+        val group = com.dbthelper.actions.context.LineageContextActionGroup.build(
+            project, this, bar, nodeIds, names, resourceTypes
+        )
+        val popup = com.intellij.openapi.actionSystem.ActionManager.getInstance()
+            .createActionPopupMenu("DbtLineageContext", group)
+        val component = browser.component
+        val pt = java.awt.Point(screenX, screenY)
+        javax.swing.SwingUtilities.convertPointFromScreen(pt, component)
+        popup.component.show(component, pt.x, pt.y)
     }
 
     /** Called at GO: build the relation index and seed targeted nodes as queued (without clearing unrelated statuses). */
