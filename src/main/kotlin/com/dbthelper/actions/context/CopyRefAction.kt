@@ -5,7 +5,10 @@ import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.ide.CopyPasteManager
 import java.awt.datatransfer.StringSelection
 
-class CopyRefAction(private val modelName: String) : AnAction("Copy ref('$modelName')") {
+class CopyRefAction(private val modelName: String) : AnAction() {
+    init {
+        templatePresentation.setText("Copy ref('$modelName')", false)
+    }
     override fun actionPerformed(e: AnActionEvent) {
         CopyPasteManager.getInstance().setContents(StringSelection("ref('$modelName')"))
     }

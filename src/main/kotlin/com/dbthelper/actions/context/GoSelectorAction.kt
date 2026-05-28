@@ -8,7 +8,11 @@ class GoSelectorAction(
     private val actionBar: DbtActionBar,
     private val selector: String,
     label: String
-) : AnAction(label) {
+) : AnAction() {
+    init {
+        // Disable mnemonic parsing so underscores in model names are not eaten by `_X` → mnemonic.
+        templatePresentation.setText(label, false)
+    }
     override fun actionPerformed(e: AnActionEvent) {
         val parent = e.inputEvent?.component ?: return
         actionBar.promptToCancelAndRetry(parent, selector)

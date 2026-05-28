@@ -100,7 +100,7 @@
     }
 
     const CARD_WIDTH = 220;
-    const CARD_HEIGHT = 56;
+    const CARD_HEIGHT = 44;
     const STUB_WIDTH = 110;
     const STUB_HEIGHT = 40;
 
@@ -370,7 +370,7 @@
         var elkOpts = Object.assign({}, ELK_LAYOUT_OPTIONS, {
             'elk.direction': elkDirectionFor(currentLayoutDir)
         });
-        cy.layout({ name: 'elk', fit: false, elk: elkOpts, workerUrl: 'elk.worker.js' })
+        cy.layout({ name: 'elk', fit: false, elk: elkOpts })
             .run()
             .promiseOn('layoutstop').then(function () {
                 // Anchor: pan by difference so the toggled node stays under the cursor
@@ -428,12 +428,6 @@
                 name2.className = 'card-name';
                 name2.textContent = data.name;
                 text.appendChild(name2);
-                if (data.schema) {
-                    var schema = document.createElement('div');
-                    schema.className = 'card-schema';
-                    schema.textContent = data.schema;
-                    text.appendChild(schema);
-                }
                 if (data.resourceType === 'source' && data.freshness && data.freshness.status !== 'pass') {
                     var fresh = document.createElement('div');
                     fresh.className = 'card-freshness fresh-' + data.freshness.status;
@@ -533,8 +527,10 @@
                     nodeIds: ids,
                     names: names,
                     resourceTypes: types,
-                    screenX: e.screenX,
-                    screenY: e.screenY
+                    // clientX/Y are viewport-relative; since JCEF fills its Swing component,
+                    // they map 1:1 to coordinates inside browser.component on the Kotlin side.
+                    clientX: Math.round(e.clientX),
+                    clientY: Math.round(e.clientY)
                 });
             });
             nodeCards[data.id] = card;
@@ -603,17 +599,20 @@
                 {
                     selector: 'node[?isParent]',
                     style: {
-                        'background-opacity': 0.04,
-                        'border-width': 1,
+                        'background-opacity': 0.10,
+                        'background-color': '#888',
+                        'border-width': 1.5,
                         'border-color': '#888',
-                        'border-opacity': 0.4,
+                        'border-opacity': 0.85,
                         'shape': 'round-rectangle',
                         'label': 'data(name)',
                         'text-valign': 'top',
-                        'text-halign': 'left',
-                        'font-size': 11,
-                        'color': '#888',
-                        'padding': 16
+                        'text-halign': 'center',
+                        'text-margin-y': -6,
+                        'font-size': 12,
+                        'font-weight': 600,
+                        'color': '#bbb',
+                        'padding': 18
                     }
                 },
                 {
@@ -802,7 +801,7 @@
             });
             finalizeLayout();
         } else {
-            cy.layout({ name: 'elk', fit: false, elk: elkOpts, workerUrl: 'elk.worker.js' })
+            cy.layout({ name: 'elk', fit: false, elk: elkOpts })
                 .run()
                 .promiseOn('layoutstop').then(function () {
                     var pos = {};

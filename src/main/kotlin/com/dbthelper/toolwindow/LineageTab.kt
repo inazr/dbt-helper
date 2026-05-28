@@ -185,11 +185,11 @@ class LineageTab(
                         @Suppress("UNCHECKED_CAST")
                         val resourceTypes = mapper.convertValue(payloadObj.get("resourceTypes"), List::class.java)
                             ?.map { it as? String } ?: emptyList()
-                        val screenX = payloadObj.get("screenX")?.asInt() ?: return@addHandler JBCefJSQuery.Response("ok")
-                        val screenY = payloadObj.get("screenY")?.asInt() ?: return@addHandler JBCefJSQuery.Response("ok")
+                        val clientX = payloadObj.get("clientX")?.asInt() ?: return@addHandler JBCefJSQuery.Response("ok")
+                        val clientY = payloadObj.get("clientY")?.asInt() ?: return@addHandler JBCefJSQuery.Response("ok")
                         if (nodeIds.isEmpty()) return@addHandler JBCefJSQuery.Response("ok")
                         ApplicationManager.getApplication().invokeLater {
-                            if (!isDisposed) showContextPopup(nodeIds, names, resourceTypes, screenX, screenY)
+                            if (!isDisposed) showContextPopup(nodeIds, names, resourceTypes, clientX, clientY)
                         }
                     }
                     "multiSelectChanged" -> {
@@ -265,16 +265,17 @@ class LineageTab(
                 return
             })
         }
-        // Inline JS files into the HTML
+        // Inline JS files into the HTML — JBCefBrowser.loadHTML uses about:blank as the
+        // base URL, so any <script src="..."> in the page cannot be resolved at runtime.
         val cytoscape = readResource("/js/cytoscape.min.js") ?: ""
-        val dagre = readResource("/js/dagre.min.js") ?: ""
-        val cytoscapeDagre = readResource("/js/cytoscape-dagre.js") ?: ""
+        val elkBundled = readResource("/js/elk.bundled.js") ?: ""
+        val cytoscapeElk = readResource("/js/cytoscape-elk.js") ?: ""
         val lineageJs = readResource("/js/lineage.js") ?: ""
 
         val fullHtml = html
             .replace("<script src=\"cytoscape.min.js\"></script>", "<script>$cytoscape</script>")
-            .replace("<script src=\"dagre.min.js\"></script>", "<script>$dagre</script>")
-            .replace("<script src=\"cytoscape-dagre.js\"></script>", "<script>$cytoscapeDagre</script>")
+            .replace("<script src=\"elk.bundled.js\"></script>", "<script>$elkBundled</script>")
+            .replace("<script src=\"cytoscape-elk.js\"></script>", "<script>$cytoscapeElk</script>")
             .replace("<script src=\"lineage.js\"></script>", "<script>$lineageJs</script>")
 
         browser.loadHTML(fullHtml)
@@ -634,8 +635,8 @@ class LineageTab(
         nodeIds: List<String>,
         names: List<String>,
         resourceTypes: List<String?>,
-        screenX: Int,
-        screenY: Int
+        clientX: Int,
+        clientY: Int
     ) {
         val bar = actionBar ?: return
         val group = com.dbthelper.actions.context.LineageContextActionGroup.build(
@@ -643,10 +644,9 @@ class LineageTab(
         )
         val popup = com.intellij.openapi.actionSystem.ActionManager.getInstance()
             .createActionPopupMenu("DbtLineageContext", group)
-        val component = browser.component
-        val pt = java.awt.Point(screenX, screenY)
-        javax.swing.SwingUtilities.convertPointFromScreen(pt, component)
-        popup.component.show(component, pt.x, pt.y)
+        // JS clientX/Y are viewport-relative; JCEF fills its Swing component, so they
+        // map directly to browser.component coordinates (no screen conversion needed).
+        popup.component.show(browser.component, clientX, clientY)
     }
 
     /** Called at GO: build the relation index and seed targeted nodes as queued (without clearing unrelated statuses). */

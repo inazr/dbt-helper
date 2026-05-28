@@ -201,7 +201,7 @@
         .card-node .card-bar {
             position: absolute;
             left: 0; top: 0; bottom: 0;
-            width: 4px;
+            width: 8px;
             background: var(--card-bar-color, #888);
         }
         .card-node .card-icon {
@@ -627,7 +627,15 @@
         #minimap-wrap.cy-minimap-pan { cursor: grabbing; }
         #minimap { display: block; width: 100%; height: 100%; }
         #controls button.active { background: var(--card-selected-bg); border-color: var(--card-selected-border); }
-        .toolbar-label { font-size: 11px; margin-left: 6px; color: var(--text-color); }
+        .toolbar-label {
+            font-size: 11px;
+            margin-left: 6px;
+            color: var(--text-color);
+            display: inline-flex;
+            align-items: center;
+            height: 28px;
+            white-space: nowrap;
+        }
         .toolbar-select {
             background: var(--btn-bg);
             color: var(--btn-text);
@@ -670,7 +678,7 @@
             <option value="folder">Folder</option>
             <option value="tag">Tag</option>
         </select>
-        <button id="regenerate-docs" title="Regenerate dbt docs">
+        <button id="regenerate-docs" title="Regenerate dbt docs&#10;Runs `dbt docs generate` to refresh target/catalog.json — populates column types, descriptions, and metadata used by the cards, hover tooltips, and column search.">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" style="width:14px;height:14px;">
                 <path d="M2.5 8a5.5 5.5 0 0 1 9.6-3.7"/>
                 <path d="M12.5 2v3h-3"/>
