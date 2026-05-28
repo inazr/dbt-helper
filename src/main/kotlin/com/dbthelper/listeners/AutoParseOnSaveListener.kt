@@ -5,6 +5,7 @@ import com.dbthelper.actions.DbtEngine
 import com.dbthelper.core.DbtProjectLocator
 import com.dbthelper.core.DbtRunState
 import com.dbthelper.settings.DbtHelperSettings
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.newvfs.BulkFileListener
@@ -28,7 +29,7 @@ class AutoParseOnSaveListener(private val project: Project) : BulkFileListener {
 
     private val logger = Logger.getInstance(AutoParseOnSaveListener::class.java)
     private val parsing = AtomicBoolean(false)
-    private var rearm = false
+    @Volatile private var rearm = false
 
     private val debounce = Timer(1500) { _ -> maybeParse() }.apply { isRepeats = false }
 
@@ -52,26 +53,32 @@ class AutoParseOnSaveListener(private val project: Project) : BulkFileListener {
         val settings = DbtHelperSettings.getInstance(project)
         if (!settings.state.autoParseOnSave) return
 
-        val runner = DbtCommandRunner(project)
-        if (runner.detectEngine() == DbtEngine.CLOUD_CLI && !settings.state.autoParseOnCloudCli) return
+        // detectEngine() shells out to `dbt --version` — for the dbt Cloud CLI that
+        // is a network round-trip. The Timer's ActionListener fires on the EDT, so
+        // hop to a pooled thread before doing any blocking I/O.
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val runner = DbtCommandRunner(project)
+            if (runner.detectEngine() == DbtEngine.CLOUD_CLI && !settings.state.autoParseOnCloudCli) return@executeOnPooledThread
 
-        if (DbtRunState.getInstance(project).isRunning()) return // don't fight a manual run
+            if (DbtRunState.getInstance(project).isRunning()) return@executeOnPooledThread // don't fight a manual run
 
-        if (!parsing.compareAndSet(false, true)) { rearm = true; return } // single-flight
+            if (!parsing.compareAndSet(false, true)) { rearm = true; return@executeOnPooledThread } // single-flight
 
-        val root = DbtProjectLocator(project).findProjectRoot()?.path
-        if (root == null) { parsing.set(false); return }
-        val exe = runner.findDbtExecutable()
+            val root = DbtProjectLocator(project).findProjectRoot()?.path
+            if (root == null) { parsing.set(false); return@executeOnPooledThread }
+            val exe = runner.findDbtExecutable()
 
-        runner.runCommand(listOf(exe, "parse"), File(root), object : DbtCommandRunner.OutputListener {
-            override fun onLine(line: String) {} // silent — do not touch the Runner log
-            override fun onFinished(result: DbtCommandRunner.RunResult) {
-                if (!result.success) {
-                    logger.debug("auto dbt parse failed (exit ${result.exitCode}); keeping last good manifest")
+            runner.runCommand(listOf(exe, "parse"), File(root), object : DbtCommandRunner.OutputListener {
+                override fun onLine(line: String) {} // silent — do not touch the Runner log
+                override fun onFinished(result: DbtCommandRunner.RunResult) {
+                    if (!result.success) {
+                        logger.debug("auto dbt parse failed (exit ${result.exitCode}); keeping last good manifest")
+                    }
+                    parsing.set(false)
+                    // Timer.restart() delegates to EventQueue.invokeLater, safe off-EDT.
+                    if (rearm) { rearm = false; debounce.restart() }
                 }
-                parsing.set(false)
-                if (rearm) { rearm = false; debounce.restart() }
-            }
-        })
+            })
+        }
     }
 }
