@@ -24,6 +24,8 @@ class DbtHelperSettings : PersistentStateComponent<DbtHelperSettings.State> {
         var previewRowLimit: Int = 10,
         var enableSystemNotifications: Boolean = true,
         var enableColoredOutput: Boolean = false,
+        var autoParseOnSave: Boolean = true,
+        var autoParseOnCloudCli: Boolean = false,
         // How lineage node bar colors are derived: "resource" | "schema" | "status".
         var nodeColorMode: String = "resource",
         // Bumped when a settings default changes so loadState can migrate old data.

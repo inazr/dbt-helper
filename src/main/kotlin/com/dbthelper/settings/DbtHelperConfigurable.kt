@@ -133,6 +133,18 @@ class DbtHelperConfigurable(private val project: Project) : BoundConfigurable("Y
                     .bindSelected(settings.state::enableColoredOutput)
                     .comment("Pass --use-colors to dbt and render ANSI colors in the Runner output panel")
             }
+            lateinit var autoParse: com.intellij.ui.dsl.builder.Cell<javax.swing.JCheckBox>
+            row {
+                autoParse = checkBox("Auto-parse on save")
+                    .bindSelected(settings.state::autoParseOnSave)
+                    .comment("Runs `dbt parse` in the background after saving a model/YAML so lineage stays current (dbt Core/Fusion).")
+            }
+            row {
+                checkBox("…also for dbt Cloud CLI")
+                    .bindSelected(settings.state::autoParseOnCloudCli)
+                    .comment("dbt Cloud CLI parses run against the platform — a network round-trip on every save.")
+                    .enabledIf(autoParse.selected)
+            }
         }
     }
 }
