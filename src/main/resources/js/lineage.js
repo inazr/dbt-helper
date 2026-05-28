@@ -134,6 +134,7 @@
     let currentColorMode = 'resource';
     let nodeStatus = {}; // uniqueId -> status string (see STATUS_BAR_COLORS keys)
     var nodeFailures = {}; // uniqueId -> failure count (integer)
+    var selectedIds = new Set();
     let activeDrag = null;
 
     window.addEventListener('mousemove', function (e) {
@@ -178,6 +179,28 @@
         hoverActive = false;
     }
 
+    function toggleMultiSelect(id) {
+        if (selectedIds.has(id)) selectedIds.delete(id);
+        else selectedIds.add(id);
+        Object.keys(nodeCards).forEach(function (cid) {
+            var c = nodeCards[cid];
+            if (c) c.classList.toggle('selected', selectedIds.has(cid));
+        });
+        notifyMultiSelectChanged();
+    }
+    function clearMultiSelect() {
+        if (selectedIds.size === 0) return;
+        selectedIds.clear();
+        Object.keys(nodeCards).forEach(function (cid) {
+            var c = nodeCards[cid];
+            if (c) c.classList.remove('selected');
+        });
+        notifyMultiSelectChanged();
+    }
+    function notifyMultiSelectChanged() {
+        sendToKotlin('multiSelectChanged', { count: selectedIds.size });
+    }
+
     function dimToNeighborhood(nodeId) {
         if (!cy) return;
         var center = cy.getElementById(nodeId);
@@ -208,6 +231,7 @@
     // Click on empty graph area clears dim
     document.getElementById('cy').addEventListener('click', function () {
         clearNeighborhoodDim();
+        clearMultiSelect();
     });
 
     window.addEventListener('mouseup', function () {
@@ -310,10 +334,18 @@
 
             // Drag + click handling — actual drag/up listeners are global (see below).
             card.addEventListener('mousedown', function (e) {
-                if (e.button !== 0) return;
+                if (e.button !== 0) {
+                    // right-click (button 2) → context menu handled by separate listener
+                    return;
+                }
                 e.preventDefault();
                 e.stopPropagation();
                 hideTooltip();
+                if (e.shiftKey || e.metaKey || e.ctrlKey) {
+                    // Toggle multi-select; do NOT begin drag
+                    toggleMultiSelect(data.id);
+                    return;
+                }
                 activeDrag = { id: data.id, data: data, card: card, startX: e.clientX, startY: e.clientY, moved: false };
                 card.style.cursor = 'grabbing';
             });
@@ -332,6 +364,36 @@
             });
 
             overlayEl.appendChild(card);
+            card.addEventListener('contextmenu', function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                var ids;
+                if (selectedIds.size > 0 && selectedIds.has(data.id)) {
+                    ids = Array.from(selectedIds);
+                } else {
+                    // Right-click on an unselected card: act on that card only
+                    clearMultiSelect();
+                    selectedIds.add(data.id);
+                    var c = nodeCards[data.id];
+                    if (c) c.classList.add('selected');
+                    ids = [data.id];
+                }
+                var types = ids.map(function (id) {
+                    var n = cy.getElementById(id);
+                    return n.length ? n.data('resourceType') : null;
+                });
+                var names = ids.map(function (id) {
+                    var n = cy.getElementById(id);
+                    return n.length ? n.data('name') : id;
+                });
+                sendToKotlin('contextMenuRequest', {
+                    nodeIds: ids,
+                    names: names,
+                    resourceTypes: types,
+                    screenX: e.screenX,
+                    screenY: e.screenY
+                });
+            });
             nodeCards[data.id] = card;
         });
         syncNodeCards();
@@ -1084,6 +1146,36 @@
         } catch (e) {
             console.error('showDocs error:', e);
         }
+    };
+
+    window.showMultiSelectPlaceholder = function (count) {
+        // Update sidebar header
+        var iconEl = document.getElementById('docs-icon');
+        var nameEl = document.getElementById('docs-name');
+        var schemaEl = document.getElementById('docs-schema');
+        var descEl = document.getElementById('docs-description');
+        var pillsEl = document.getElementById('docs-pills');
+        if (iconEl) iconEl.textContent = '';
+        if (nameEl) nameEl.textContent = count + ' nodes selected';
+        if (schemaEl) schemaEl.textContent = '';
+        if (descEl) { descEl.classList.add('empty'); document.getElementById('docs-desc-text').textContent = ''; }
+        if (pillsEl) pillsEl.textContent = '';
+        // Clear all section content and show a message in the columns section
+        var sections = document.querySelectorAll('.docs-section');
+        sections.forEach(function (s) { s.textContent = ''; s.classList.remove('active'); });
+        var colSection = document.getElementById('docs-section-columns');
+        if (colSection) {
+            colSection.classList.add('active');
+            var hint = document.createElement('p');
+            hint.className = 'empty';
+            hint.textContent = 'Click one node to see its details.';
+            colSection.appendChild(hint);
+        }
+        // Ensure sidebar is open
+        var sidebarEl = document.getElementById('docs-sidebar');
+        if (sidebarEl) sidebarEl.classList.add('open');
+        var toggleBtn = document.getElementById('toggle-sidebar');
+        if (toggleBtn) toggleBtn.classList.add('active');
     };
 
     window.applyTheme = function (isDark) {

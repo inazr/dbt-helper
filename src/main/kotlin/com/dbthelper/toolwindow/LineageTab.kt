@@ -29,12 +29,17 @@ import com.intellij.ui.jcef.JBCefBrowserBase
 import com.intellij.ui.jcef.JBCefJSQuery
 import com.intellij.ide.ui.LafManagerListener
 import org.cef.browser.CefBrowser
+import org.cef.handler.CefContextMenuHandlerAdapter
 import org.cef.handler.CefLoadHandlerAdapter
 import java.awt.BorderLayout
 import javax.swing.JPanel
 import javax.swing.UIManager
 
-class LineageTab(private val project: Project, private val parentDisposable: Disposable) : JPanel(BorderLayout()), Disposable {
+class LineageTab(
+    private val project: Project,
+    private val parentDisposable: Disposable,
+    private val actionBar: DbtActionBar? = null
+) : JPanel(BorderLayout()), Disposable {
 
     private val logger = Logger.getInstance(LineageTab::class.java)
     private val mapper = ObjectMapper().registerModule(KotlinModule.Builder().build())
@@ -78,6 +83,16 @@ class LineageTab(private val project: Project, private val parentDisposable: Dis
 
         setupJsBridge()
         setupLoadHandler()
+        browser.jbCefClient.addContextMenuHandler(object : CefContextMenuHandlerAdapter() {
+            override fun onBeforeContextMenu(
+                browser: org.cef.browser.CefBrowser?,
+                frame: org.cef.browser.CefFrame?,
+                params: org.cef.callback.CefContextMenuParams?,
+                model: org.cef.callback.CefMenuModel?
+            ) {
+                model?.clear()
+            }
+        }, browser.cefBrowser)
         loadHtml()
 
         val connection = project.messageBus.connect(this)
@@ -152,6 +167,32 @@ class LineageTab(private val project: Project, private val parentDisposable: Dis
                         handleExpandRequest(boundaryNodeId, direction)
                     }
                     "regenerateDocs" -> handleRegenerateDocs()
+                    "contextMenuRequest" -> {
+                        val payloadObj = payload ?: return@addHandler JBCefJSQuery.Response("ok")
+                        @Suppress("UNCHECKED_CAST")
+                        val nodeIds = mapper.convertValue(payloadObj.get("nodeIds"), List::class.java)
+                            ?.filterIsInstance<String>() ?: emptyList()
+                        @Suppress("UNCHECKED_CAST")
+                        val names = mapper.convertValue(payloadObj.get("names"), List::class.java)
+                            ?.filterIsInstance<String>() ?: emptyList()
+                        @Suppress("UNCHECKED_CAST")
+                        val resourceTypes = mapper.convertValue(payloadObj.get("resourceTypes"), List::class.java)
+                            ?.map { it as? String } ?: emptyList()
+                        val screenX = payloadObj.get("screenX")?.asInt() ?: return@addHandler JBCefJSQuery.Response("ok")
+                        val screenY = payloadObj.get("screenY")?.asInt() ?: return@addHandler JBCefJSQuery.Response("ok")
+                        if (nodeIds.isEmpty()) return@addHandler JBCefJSQuery.Response("ok")
+                        ApplicationManager.getApplication().invokeLater {
+                            if (!isDisposed) showContextPopup(nodeIds, names, resourceTypes, screenX, screenY)
+                        }
+                    }
+                    "multiSelectChanged" -> {
+                        val count = payload?.get("count")?.asInt() ?: 0
+                        if (count > 1) {
+                            ApplicationManager.getApplication().invokeLater {
+                                if (!isDisposed) executeJs("showMultiSelectPlaceholder($count)")
+                            }
+                        }
+                    }
                 }
                 JBCefJSQuery.Response("ok")
             } catch (e: Exception) {
@@ -277,6 +318,69 @@ class LineageTab(private val project: Project, private val parentDisposable: Dis
         selectorUpstreamDepth = upstreamDepth
         selectorDownstreamDepth = downstreamDepth
         refreshGraph()
+    }
+
+    /**
+     * Refocus the lineage graph on [nodeId] without opening the file in the editor.
+     * Clears any selector depth overrides and expanded boundary nodes, then re-renders.
+     */
+    fun refocusOnNode(nodeId: String) {
+        if (isDisposed) return
+        if (nodeId == currentModelId) return
+        currentModelId = nodeId
+        expandedBoundaryNodes.clear()
+        selectorUpstreamDepth = null
+        selectorDownstreamDepth = null
+        refreshGraph()
+    }
+
+    /**
+     * Open the source file for [nodeId] in the editor.
+     * When [preferYaml] is true, prefer the node's patch_path (YAML schema file) if
+     * available; otherwise fall back to [originalFilePath] (the SQL file).
+     * The patch_path in the dbt manifest uses a "package://" prefix that is stripped.
+     */
+    fun openFileForNode(nodeId: String, preferYaml: Boolean) {
+        if (isDisposed) return
+        ApplicationManager.getApplication().invokeLater {
+            if (isDisposed) return@invokeLater
+            val service = ManifestService.getInstance(project)
+            val index = service.getIndex()
+            val locator = service.getLocator()
+            val dbtRoot = locator.findProjectRoot() ?: return@invokeLater
+
+            val sqlPath: String?
+            val yamlPath: String?
+
+            when {
+                index.sources.containsKey(nodeId) -> {
+                    val src = index.sources[nodeId]!!
+                    sqlPath = null
+                    yamlPath = src.originalFilePath
+                }
+                index.exposures.containsKey(nodeId) -> {
+                    val exp = index.exposures[nodeId]!!
+                    sqlPath = null
+                    yamlPath = exp.originalFilePath
+                }
+                else -> {
+                    val node = index.nodes[nodeId]
+                    sqlPath = node?.originalFilePath
+                    // patchPath is stored as "package://relative/path.yml" — strip prefix
+                    yamlPath = node?.patchPath?.let { pp ->
+                        val sepIdx = pp.indexOf("://")
+                        if (sepIdx >= 0) pp.substring(sepIdx + 3) else pp
+                    }
+                }
+            }
+
+            val relativePath = if (preferYaml && yamlPath != null) yamlPath else (sqlPath ?: yamlPath)
+                ?: return@invokeLater
+
+            val fullPath = "${dbtRoot.path}/$relativePath"
+            val vFile = LocalFileSystem.getInstance().findFileByPath(fullPath) ?: return@invokeLater
+            FileEditorManager.getInstance(project).openFile(vFile, true)
+        }
     }
 
     fun refreshGraph() {
@@ -455,6 +559,25 @@ class LineageTab(private val project: Project, private val parentDisposable: Dis
         }
         expandedBoundaryNodes.add(boundaryNodeId)
         refreshGraph()
+    }
+
+    private fun showContextPopup(
+        nodeIds: List<String>,
+        names: List<String>,
+        resourceTypes: List<String?>,
+        screenX: Int,
+        screenY: Int
+    ) {
+        val bar = actionBar ?: return
+        val group = com.dbthelper.actions.context.LineageContextActionGroup.build(
+            project, this, bar, nodeIds, names, resourceTypes
+        )
+        val popup = com.intellij.openapi.actionSystem.ActionManager.getInstance()
+            .createActionPopupMenu("DbtLineageContext", group)
+        val component = browser.component
+        val pt = java.awt.Point(screenX, screenY)
+        javax.swing.SwingUtilities.convertPointFromScreen(pt, component)
+        popup.component.show(component, pt.x, pt.y)
     }
 
     /** Called at GO: build the relation index and seed targeted nodes as queued (without clearing unrelated statuses). */
