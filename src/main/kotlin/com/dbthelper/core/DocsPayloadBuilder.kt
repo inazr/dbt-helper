@@ -33,7 +33,8 @@ object DocsPayloadBuilder {
                 "list" to tests.map { mapOf(
                     "name" to it.name,
                     "shortName" to shortTestName(it.name),
-                    "column" to (it.config["column_name"] as? String ?: "")
+                    "column" to (it.config["column_name"] as? String ?: ""),
+                    "uniqueId" to it.uniqueId
                 ) }
             ),
             "columns" to node.columns.values.map { col ->

@@ -864,10 +864,14 @@
             var map = typeof payloadOrJson === 'string' ? JSON.parse(payloadOrJson) : payloadOrJson;
             nodeStatus = {};
             nodeFailures = {};
+            nodeFailureMessages = {};
             Object.keys(map).forEach(function (id) {
                 nodeStatus[id] = map[id].status;
                 if (map[id].failures && map[id].failures > 0) {
                     nodeFailures[id] = map[id].failures;
+                    if (map[id].message) {
+                        nodeFailureMessages[id] = map[id].message;
+                    }
                 }
             });
             repaintAllStatusCards();
@@ -1216,6 +1220,10 @@
             var t = list[i];
             html += '<li>' + escapeHtml(t.shortName);
             if (t.column) html += ' <span style="color: var(--card-schema)">on ' + escapeHtml(t.column) + '</span>';
+            var msg = t.uniqueId ? nodeFailureMessages[t.uniqueId] : null;
+            if (msg) {
+                html += '<div style="color: #F85149; margin-top: 2px; font-size: 11px;">' + escapeHtml(msg) + '</div>';
+            }
             html += '</li>';
         }
         html += '</ul>';
