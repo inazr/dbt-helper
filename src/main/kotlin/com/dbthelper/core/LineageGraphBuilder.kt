@@ -256,6 +256,16 @@ class LineageGraphBuilder(
     private fun toLineageNode(id: String, depth: Int, isCurrent: Boolean): LineageNode? {
         // Try nodes first
         index.nodes[id]?.let { node ->
+            val hints = SearchIndexBuilder.buildHints(
+                uniqueId = id,
+                name = node.name,
+                schema = node.schema,
+                materialization = node.config["materialized"] as? String,
+                resourceType = node.resourceType,
+                packageName = node.packageName,
+                columnNames = node.columns.keys.toList(),
+                tags = node.tags
+            )
             return LineageNode(
                 id = id,
                 name = node.name,
@@ -269,12 +279,23 @@ class LineageGraphBuilder(
                     ColumnNode(col.name, col.dataType, col.description.ifEmpty { null })
                 },
                 depth = depth,
-                isCurrent = isCurrent
+                isCurrent = isCurrent,
+                searchHints = hints
             )
         }
 
         // Try sources
         index.sources[id]?.let { source ->
+            val hints = SearchIndexBuilder.buildHints(
+                uniqueId = id,
+                name = "${source.sourceName}.${source.name}",
+                schema = source.schema,
+                materialization = null,
+                resourceType = "source",
+                packageName = source.packageName,
+                columnNames = source.columns.keys.toList(),
+                tags = source.tags
+            )
             return LineageNode(
                 id = id,
                 name = "${source.sourceName}.${source.name}",
@@ -288,12 +309,23 @@ class LineageGraphBuilder(
                     ColumnNode(col.name, col.dataType, col.description.ifEmpty { null })
                 },
                 depth = depth,
-                isCurrent = isCurrent
+                isCurrent = isCurrent,
+                searchHints = hints
             )
         }
 
         // Try exposures
         index.exposures[id]?.let { exposure ->
+            val hints = SearchIndexBuilder.buildHints(
+                uniqueId = id,
+                name = exposure.name,
+                schema = null,
+                materialization = null,
+                resourceType = "exposure",
+                packageName = exposure.packageName,
+                columnNames = emptyList(),
+                tags = exposure.tags
+            )
             return LineageNode(
                 id = id,
                 name = exposure.name,
@@ -305,7 +337,8 @@ class LineageGraphBuilder(
                 description = exposure.description.ifEmpty { null },
                 columns = emptyList(),
                 depth = depth,
-                isCurrent = isCurrent
+                isCurrent = isCurrent,
+                searchHints = hints
             )
         }
 

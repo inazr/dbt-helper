@@ -24,7 +24,8 @@ data class LineageNode(
     val depth: Int,
     val isCurrent: Boolean = false,
     val stubDirection: String? = null,
-    val boundaryNodeId: String? = null
+    val boundaryNodeId: String? = null,
+    val searchHints: com.dbthelper.core.SearchHints? = null
 )
 
 data class ColumnNode(
