@@ -105,6 +105,13 @@ class LineageTab(private val project: Project, private val parentDisposable: Dis
             }
         })
 
+        // Subscribe to run-results updates
+        connection.subscribe(
+            com.dbthelper.actions.RunResultsUpdateListener.TOPIC,
+            com.dbthelper.actions.RunResultsUpdateListener { results -> pushRunResultsToJs(results) }
+        )
+        pushRunResultsToJs(project.getService(com.dbthelper.listeners.RunResultsWatcher::class.java).current())
+
         // Listen for theme changes
         val appConnection = ApplicationManager.getApplication().messageBus.connect(this)
         appConnection.subscribe(LafManagerListener.TOPIC, LafManagerListener { applyCurrentTheme() })
@@ -488,6 +495,27 @@ class LineageTab(private val project: Project, private val parentDisposable: Dis
             val escaped = escapeJsJson(json)
             ApplicationManager.getApplication().invokeLater {
                 if (!isDisposed) executeJs("applyRunResults('$escaped')")
+            }
+        }
+    }
+
+    private fun pushRunResultsToJs(results: Map<String, com.dbthelper.actions.RunResult>) {
+        if (!isPageReady || isDisposed) return
+        val payload = mapper.writeValueAsString(results.mapValues { (_, r) ->
+            mapOf(
+                "status" to r.status.wire,
+                "message" to r.message,
+                "failures" to (r.failures ?: 0),
+                "startedAt" to r.startedAt?.toString(),
+                "executionTime" to r.executionTime
+            )
+        })
+        ApplicationManager.getApplication().invokeLater {
+            if (!isDisposed) {
+                browser.cefBrowser.executeJavaScript(
+                    "window.setRunResults && window.setRunResults(${payload});",
+                    browser.cefBrowser.url, 0
+                )
             }
         }
     }

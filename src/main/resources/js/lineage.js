@@ -133,6 +133,7 @@
     let nodeCards = {};
     let currentColorMode = 'resource';
     let nodeStatus = {}; // uniqueId -> status string (see STATUS_BAR_COLORS keys)
+    var nodeFailures = {}; // uniqueId -> failure count (integer)
     let activeDrag = null;
 
     window.addEventListener('mousemove', function (e) {
@@ -653,6 +654,27 @@
         nodeStatus = {};
         if (currentColorMode === 'status') repaintAllStatusCards();
     };
+
+    window.setRunResults = function (payloadOrJson) {
+        try {
+            var map = typeof payloadOrJson === 'string' ? JSON.parse(payloadOrJson) : payloadOrJson;
+            nodeStatus = {};
+            nodeFailures = {};
+            Object.keys(map).forEach(function (id) {
+                nodeStatus[id] = map[id].status;
+                if (map[id].failures && map[id].failures > 0) {
+                    nodeFailures[id] = map[id].failures;
+                }
+            });
+            repaintAllStatusCards();
+            if (typeof repaintAllFailureBadges === 'function') repaintAllFailureBadges();
+            renderRunResultsHint(map);
+        } catch (e) { console.error('setRunResults error:', e); }
+    };
+
+    function renderRunResultsHint(map) {
+        // Implemented in Task 9.
+    }
 
     window.renderGraph = function (jsonStr) {
         layoutCache.clear();
