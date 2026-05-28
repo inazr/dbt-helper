@@ -28,6 +28,8 @@ class DbtHelperSettings : PersistentStateComponent<DbtHelperSettings.State> {
         var autoParseOnCloudCli: Boolean = false,
         // How lineage node bar colors are derived: "resource" | "schema" | "status".
         var nodeColorMode: String = "resource",
+        // Edges spanning more than this many layers are replaced with an inline stub node.
+        var maxLayerSkipBeforeStub: Int = 3,
         // Bumped when a settings default changes so loadState can migrate old data.
         // Absent in pre-migration saved files, so it deserializes to 0 there.
         var configVersion: Int = 0
