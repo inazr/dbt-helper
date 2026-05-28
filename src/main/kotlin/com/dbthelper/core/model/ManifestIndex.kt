@@ -1,5 +1,7 @@
 package com.dbthelper.core.model
 
+import com.dbthelper.core.toUnixPath
+
 data class ManifestIndex(
     val nodes: Map<String, DbtNode> = emptyMap(),
     val sources: Map<String, DbtSource> = emptyMap(),
@@ -18,7 +20,7 @@ data class ManifestIndex(
     val sourceCount: Int get() = sources.size
 
     fun findByFilePath(relativePath: String): String? {
-        val normalized = relativePath.replace('\\', '/')
+        val normalized = relativePath.toUnixPath()
         return filePathMap[normalized]
     }
 

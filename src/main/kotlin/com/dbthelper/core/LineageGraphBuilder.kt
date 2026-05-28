@@ -421,7 +421,7 @@ class LineageGraphBuilder(
             "cluster_schema_${node.schema ?: "_"}"
         }
         "folder" -> {
-            val path = node.filePath?.replace('\\', '/')?.removePrefix("models/")
+            val path = node.filePath?.toUnixPath()?.removePrefix("models/")
             val seg = path?.substringBefore('/', missingDelimiterValue = "")
             if (seg.isNullOrBlank()) null else "cluster_folder_$seg"
         }

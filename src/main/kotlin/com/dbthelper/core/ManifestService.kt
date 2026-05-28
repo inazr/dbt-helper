@@ -83,7 +83,7 @@ class ManifestService(private val project: Project) : Disposable {
                 for (parentId in node.dependsOnNodes) {
                     childMapBuilder.getOrPut(parentId) { mutableListOf() }.add(id)
                 }
-                val path = node.originalFilePath.replace('\\', '/')
+                val path = node.originalFilePath.toUnixPath()
                 filePathMap[path] = id
                 node.relationName?.let { relationMap[it] = id }
             }
@@ -92,12 +92,12 @@ class ManifestService(private val project: Project) : Disposable {
                 source.relationName?.let { relationMap[it] = id }
                 // Add source file paths — multiple sources can share one yml file,
                 // so only store first match per path
-                val srcPath = source.originalFilePath.replace('\\', '/')
+                val srcPath = source.originalFilePath.toUnixPath()
                 filePathMap.putIfAbsent(srcPath, id)
             }
 
             for ((id, exposure) in exposures) {
-                val expPath = exposure.originalFilePath.replace('\\', '/')
+                val expPath = exposure.originalFilePath.toUnixPath()
                 filePathMap.putIfAbsent(expPath, id)
                 parentMap[id] = exposure.dependsOnNodes
                 for (parentId in exposure.dependsOnNodes) {

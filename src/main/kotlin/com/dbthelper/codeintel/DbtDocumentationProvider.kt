@@ -2,6 +2,7 @@ package com.dbthelper.codeintel
 
 import com.dbthelper.core.ManifestService
 import com.dbthelper.core.model.*
+import com.dbthelper.core.toUnixPath
 import com.intellij.lang.documentation.AbstractDocumentationProvider
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
@@ -19,7 +20,7 @@ class DbtDocumentationProvider : AbstractDocumentationProvider() {
             if (index === ManifestIndex.EMPTY) return null
 
             val relativePath = service.getLocator().getRelativePath(vFile) ?: return null
-            val normalized = relativePath.replace('\\', '/')
+            val normalized = relativePath.toUnixPath()
 
             val nodeId = index.findByFilePath(normalized)
             if (nodeId != null) {
@@ -31,7 +32,7 @@ class DbtDocumentationProvider : AbstractDocumentationProvider() {
             if (sourceMatch != null) return DbtDocRenderer.buildSourceDoc(sourceMatch, index)
 
             for ((_, macro) in index.macros) {
-                if (macro.originalFilePath.replace('\\', '/') == normalized) {
+                if (macro.originalFilePath.toUnixPath() == normalized) {
                     return DbtDocRenderer.buildMacroDoc(macro)
                 }
             }

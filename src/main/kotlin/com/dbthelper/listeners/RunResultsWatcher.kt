@@ -4,6 +4,7 @@ import com.dbthelper.actions.RunResult
 import com.dbthelper.actions.RunResultsParser
 import com.dbthelper.actions.RunResultsUpdateListener
 import com.dbthelper.core.DbtProjectLocator
+import com.dbthelper.core.toUnixPath
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.thisLogger
@@ -36,8 +37,8 @@ class RunResultsWatcher(private val project: Project) {
     private fun isRunResultsFile(file: VirtualFile?): Boolean {
         if (file == null || file.name != "run_results.json") return false
         val rootPath = projectRoot() ?: return false
-        val expected = rootPath.replace('\\', '/').trimEnd('/') + "/target/run_results.json"
-        return file.path.replace('\\', '/') == expected
+        val expected = rootPath.toUnixPath().trimEnd('/') + "/target/run_results.json"
+        return file.path.toUnixPath() == expected
     }
 
     private fun projectRoot(): String? {

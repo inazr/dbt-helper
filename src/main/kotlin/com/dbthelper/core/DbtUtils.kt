@@ -6,6 +6,13 @@ import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiManager
 
+/**
+ * Normalise a path to use forward slashes.
+ * dbt on Windows writes backslashes into `original_file_path`; all manifest-derived
+ * path keys must be normalised before they're used as map keys or compared.
+ */
+fun String.toUnixPath(): String = replace('\\', '/')
+
 object DbtUtils {
 
     fun escapeHtml(s: String): String = s

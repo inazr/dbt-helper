@@ -4,6 +4,7 @@ import com.dbthelper.actions.DbtCommandRunner
 import com.dbthelper.actions.DbtEngine
 import com.dbthelper.core.DbtProjectLocator
 import com.dbthelper.core.DbtRunState
+import com.dbthelper.core.toUnixPath
 import com.dbthelper.settings.DbtHelperSettings
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
@@ -43,8 +44,8 @@ class AutoParseOnSaveListener(private val project: Project) : BulkFileListener {
     }
 
     private fun isRelevant(path: String, root: String): Boolean {
-        val norm = path.replace('\\', '/')
-        if (!norm.startsWith(root.replace('\\', '/'))) return false
+        val norm = path.toUnixPath()
+        if (!norm.startsWith(root.toUnixPath())) return false
         if ("/target/" in norm) return false // dbt's own outputs — never trigger on these
         return norm.endsWith(".sql") || norm.endsWith(".yml")
     }
