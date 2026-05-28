@@ -29,6 +29,7 @@ import com.intellij.ui.jcef.JBCefBrowserBase
 import com.intellij.ui.jcef.JBCefJSQuery
 import com.intellij.ide.ui.LafManagerListener
 import org.cef.browser.CefBrowser
+import org.cef.handler.CefContextMenuHandlerAdapter
 import org.cef.handler.CefLoadHandlerAdapter
 import java.awt.BorderLayout
 import javax.swing.JPanel
@@ -78,6 +79,16 @@ class LineageTab(private val project: Project, private val parentDisposable: Dis
 
         setupJsBridge()
         setupLoadHandler()
+        browser.jbCefClient.addContextMenuHandler(object : CefContextMenuHandlerAdapter() {
+            override fun onBeforeContextMenu(
+                browser: org.cef.browser.CefBrowser?,
+                frame: org.cef.browser.CefFrame?,
+                params: org.cef.callback.CefContextMenuParams?,
+                model: org.cef.callback.CefMenuModel?
+            ) {
+                model?.clear()
+            }
+        }, browser.cefBrowser)
         loadHtml()
 
         val connection = project.messageBus.connect(this)
