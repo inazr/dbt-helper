@@ -47,6 +47,36 @@
         return layoutDir === 'TB' ? 'DOWN' : 'RIGHT';
     }
 
+    var layoutCache = (function () {
+        var MAX = 20;
+        var map = new Map();
+        function hash(key) {
+            var h = 0;
+            for (var i = 0; i < key.length; i++) { h = (h * 31 + key.charCodeAt(i)) | 0; }
+            return String(h);
+        }
+        return {
+            keyFor: function (currentNodeId, nodes, edges, clusterMode, expandedIds) {
+                var nIds = nodes.map(function (n) { return n.data.id + ':' + n.data.w + 'x' + n.data.h; }).sort().join('|');
+                var eIds = edges.map(function (e) { return e.data.id; }).sort().join('|');
+                var ex = (expandedIds || []).slice().sort().join(',');
+                return hash(currentNodeId + '##' + (clusterMode || '') + '##' + ex + '##' + nIds + '##' + eIds);
+            },
+            get: function (k) {
+                if (!map.has(k)) return null;
+                var v = map.get(k);
+                map.delete(k); map.set(k, v); // LRU bump
+                return v;
+            },
+            put: function (k, positions) {
+                if (map.has(k)) map.delete(k);
+                else if (map.size >= MAX) { map.delete(map.keys().next().value); }
+                map.set(k, positions);
+            },
+            clear: function () { map.clear(); }
+        };
+    })();
+
     function schemaColor(schema) {
         var h = 0;
         for (var i = 0; i < schema.length; i++) {
@@ -314,19 +344,11 @@
             cy.destroy();
         }
         lastCurrentNodeId = currentNodeId;
-        loadingEl.style.display = 'none';
 
         cy = cytoscape({
             container: document.getElementById('cy'),
             elements: elements,
-            layout: {
-                name: 'elk',
-                fit: false,
-                elk: Object.assign({}, ELK_LAYOUT_OPTIONS, {
-                    'elk.direction': elkDirectionFor(layoutDirection)
-                }),
-                workerUrl: 'elk.worker.js'
-            },
+            layout: { name: 'preset', fit: false },
             style: [
                 {
                     selector: 'node',
@@ -399,94 +421,126 @@
             moveTooltip(evt.renderedPosition);
         });
 
-        // Build HTML cards over cytoscape
-        buildNodeCards();
-        cy.on('pan zoom position layoutstop', syncNodeCards);
+        function finalizeLayout() {
+            loadingEl.style.display = 'none';
 
-        // Restore viewport or center on current node
-        if (isRerender && savedZoom && savedPan) {
-            cy.zoom(savedZoom);
-            cy.pan(savedPan);
-        } else {
-            // First render — fit graph, then center on current node
-            cy.fit(undefined, 30);
-            var currentNode = cy.getElementById(currentNodeId);
-            if (currentNode.length) {
-                cy.center(currentNode);
-            }
-        }
-
-        // Fade in new nodes and edges
-        if (isRerender && previousNodeIds.size > 0) {
-            cy.nodes().forEach(function (node) {
-                if (!previousNodeIds.has(node.id())) {
-                    node.style('opacity', 0);
-                    node.animate({ style: { opacity: 1 } }, { duration: 300, complete: function () {
-                        node.removeStyle('opacity');
-                    }});
-                }
-            });
-            cy.edges().forEach(function (edge) {
-                var srcNew = !previousNodeIds.has(edge.source().id());
-                var tgtNew = !previousNodeIds.has(edge.target().id());
-                if (srcNew || tgtNew) {
-                    edge.style('opacity', 0);
-                    edge.animate({ style: { opacity: 1 } }, { duration: 300, complete: function () {
-                        edge.removeStyle('opacity');
-                    }});
-                }
-            });
-        }
-
-        // Manual wheel/pinch zoom for JCEF trackpad compatibility
-        var cyContainer = document.getElementById('cy');
-
-        function applyZoom(factor, x, y) {
-            var zoom = cy.zoom() * factor;
-            zoom = Math.max(cy.minZoom(), Math.min(cy.maxZoom(), zoom));
-            cy.zoom({ level: zoom, renderedPosition: { x: x, y: y } });
-        }
-
-        // Wheel event — handles scroll and ctrl+scroll (pinch on some systems)
-        cyContainer.addEventListener('wheel', function (e) {
-            if (!cy) return;
-            e.preventDefault();
-            var delta = e.deltaY;
-            var sensitivity = e.ctrlKey ? 0.01 : 0.001;
-            applyZoom(1 - delta * sensitivity, e.offsetX, e.offsetY);
-        }, { passive: false });
-
-        // Zoom control buttons — 5% step
-        document.getElementById('zoom-in').addEventListener('click', function () {
-            if (!cy) return;
-            applyZoom(1.02, cy.width() / 2, cy.height() / 2);
-        });
-        document.getElementById('zoom-out').addEventListener('click', function () {
-            if (!cy) return;
-            applyZoom(1 / 1.02, cy.width() / 2, cy.height() / 2);
-        });
-        document.getElementById('zoom-fit').addEventListener('click', function () {
-            if (!cy) return;
-            cy.fit(undefined, 30);
-        });
-
-        // Keyboard zoom: +/- and =/- keys (skip when typing in search)
-        document.addEventListener('keydown', function (e) {
-            if (!cy) return;
-            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-            var cx = cy.width() / 2;
-            var cy2 = cy.height() / 2;
-            if (e.key === '+' || e.key === '=' || (e.key === '=' && e.metaKey)) {
-                e.preventDefault();
-                applyZoom(1.02, cx, cy2);
-            } else if (e.key === '-' || e.key === '_') {
-                e.preventDefault();
-                applyZoom(1 / 1.02, cx, cy2);
-            } else if (e.key === '0') {
-                e.preventDefault();
+            // Restore viewport or center on current node
+            if (isRerender && savedZoom && savedPan) {
+                cy.zoom(savedZoom);
+                cy.pan(savedPan);
+            } else {
+                // First render — fit graph, then center on current node
                 cy.fit(undefined, 30);
+                var currentNode = cy.getElementById(currentNodeId);
+                if (currentNode.length) {
+                    cy.center(currentNode);
+                }
             }
+
+            // Fade in new nodes and edges
+            if (isRerender && previousNodeIds.size > 0) {
+                cy.nodes().forEach(function (node) {
+                    if (!previousNodeIds.has(node.id())) {
+                        node.style('opacity', 0);
+                        node.animate({ style: { opacity: 1 } }, { duration: 300, complete: function () {
+                            node.removeStyle('opacity');
+                        }});
+                    }
+                });
+                cy.edges().forEach(function (edge) {
+                    var srcNew = !previousNodeIds.has(edge.source().id());
+                    var tgtNew = !previousNodeIds.has(edge.target().id());
+                    if (srcNew || tgtNew) {
+                        edge.style('opacity', 0);
+                        edge.animate({ style: { opacity: 1 } }, { duration: 300, complete: function () {
+                            edge.removeStyle('opacity');
+                        }});
+                    }
+                });
+            }
+
+            // Build HTML cards over cytoscape
+            buildNodeCards();
+            cy.on('pan zoom position layoutstop', syncNodeCards);
+
+            // Manual wheel/pinch zoom for JCEF trackpad compatibility
+            var cyContainer = document.getElementById('cy');
+
+            function applyZoom(factor, x, y) {
+                var zoom = cy.zoom() * factor;
+                zoom = Math.max(cy.minZoom(), Math.min(cy.maxZoom(), zoom));
+                cy.zoom({ level: zoom, renderedPosition: { x: x, y: y } });
+            }
+
+            // Wheel event — handles scroll and ctrl+scroll (pinch on some systems)
+            cyContainer.addEventListener('wheel', function (e) {
+                if (!cy) return;
+                e.preventDefault();
+                var delta = e.deltaY;
+                var sensitivity = e.ctrlKey ? 0.01 : 0.001;
+                applyZoom(1 - delta * sensitivity, e.offsetX, e.offsetY);
+            }, { passive: false });
+
+            // Zoom control buttons — 5% step
+            document.getElementById('zoom-in').addEventListener('click', function () {
+                if (!cy) return;
+                applyZoom(1.02, cy.width() / 2, cy.height() / 2);
+            });
+            document.getElementById('zoom-out').addEventListener('click', function () {
+                if (!cy) return;
+                applyZoom(1 / 1.02, cy.width() / 2, cy.height() / 2);
+            });
+            document.getElementById('zoom-fit').addEventListener('click', function () {
+                if (!cy) return;
+                cy.fit(undefined, 30);
+            });
+
+            // Keyboard zoom: +/- and =/- keys (skip when typing in search)
+            document.addEventListener('keydown', function (e) {
+                if (!cy) return;
+                if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+                var cx = cy.width() / 2;
+                var cy2 = cy.height() / 2;
+                if (e.key === '+' || e.key === '=' || (e.key === '=' && e.metaKey)) {
+                    e.preventDefault();
+                    applyZoom(1.02, cx, cy2);
+                } else if (e.key === '-' || e.key === '_') {
+                    e.preventDefault();
+                    applyZoom(1 / 1.02, cx, cy2);
+                } else if (e.key === '0') {
+                    e.preventDefault();
+                    cy.fit(undefined, 30);
+                }
+            });
+        }
+
+        var elkOpts = Object.assign({}, ELK_LAYOUT_OPTIONS, {
+            'elk.direction': elkDirectionFor(layoutDirection)
         });
+        var cacheKey = layoutCache.keyFor(
+            currentNodeId,
+            elements.filter(function (e) { return e.data && !e.data.source; }),
+            elements.filter(function (e) { return e.data && e.data.source; }),
+            null,
+            []
+        );
+        var cached = layoutCache.get(cacheKey);
+        if (cached) {
+            cy.nodes().forEach(function (n) {
+                var p = cached[n.id()];
+                if (p) n.position({ x: p.x, y: p.y });
+            });
+            finalizeLayout();
+        } else {
+            cy.layout({ name: 'elk', fit: false, elk: elkOpts, workerUrl: 'elk.worker.js' })
+                .run()
+                .promiseOn('layoutstop').then(function () {
+                    var pos = {};
+                    cy.nodes().forEach(function (n) { var p = n.position(); pos[n.id()] = { x: p.x, y: p.y }; });
+                    layoutCache.put(cacheKey, pos);
+                    finalizeLayout();
+                });
+        }
     }
 
 
@@ -560,6 +614,7 @@
     };
 
     window.renderGraph = function (jsonStr) {
+        layoutCache.clear();
         try {
             const graph = typeof jsonStr === 'string' ? JSON.parse(jsonStr) : jsonStr;
             currentColorMode = graph.nodeColorMode || 'resource';
