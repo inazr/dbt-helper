@@ -215,6 +215,11 @@ class LineageTab(
                     val js = "window.__cefQueryBridge = function(request) { $bridgeCode };"
                     cefBrowser?.executeJavaScript(js, cefBrowser.url, 0)
 
+                    // Inject project root hash for localStorage key namespacing
+                    val rootPath = project.basePath ?: "default"
+                    val hash = rootPath.hashCode().toString(16)
+                    cefBrowser?.executeJavaScript("window.__projectRootHash = '$hash';", cefBrowser.url, 0)
+
                     // Page is loaded and bridge is injected — mark ready and render
                     isPageReady = true
 

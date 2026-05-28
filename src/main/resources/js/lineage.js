@@ -90,6 +90,12 @@
     const STUB_WIDTH = 110;
     const STUB_HEIGHT = 40;
 
+    function cardHeightFor(data) {
+        if (!expandedIds.has(data.id)) return CARD_HEIGHT;
+        var rows = (data.columns && data.columns.length) || 1;
+        return CARD_HEIGHT + Math.min(rows * 22, 240);
+    }
+
     // Inline SVG icons keyed by visual variant.
     const ICONS = {
         source: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3.5" y="3" width="9" height="10" rx="1.5"/><path d="M7 8h3.5M9 6.5L10.5 8 9 9.5"/></svg>',
@@ -134,8 +140,29 @@
     let currentColorMode = 'resource';
     let nodeStatus = {}; // uniqueId -> status string (see STATUS_BAR_COLORS keys)
     var nodeFailures = {}; // uniqueId -> failure count (integer)
+    var nodeFailureMessages = {}; // uniqueId -> failure message string
     var selectedIds = new Set();
     let activeDrag = null;
+
+    var expandedIds = new Set();
+
+    function projectStorageKey(suffix) {
+        return 'dbtHelper.' + suffix + '.' + (window.__projectRootHash || 'default');
+    }
+
+    function loadExpandedFromStorage() {
+        try {
+            var raw = localStorage.getItem(projectStorageKey('expandedNodes'));
+            if (!raw) return;
+            var arr = JSON.parse(raw);
+            if (Array.isArray(arr)) expandedIds = new Set(arr);
+        } catch (e) {}
+    }
+    function saveExpandedToStorage() {
+        try {
+            localStorage.setItem(projectStorageKey('expandedNodes'), JSON.stringify(Array.from(expandedIds)));
+        } catch (e) {}
+    }
 
     window.addEventListener('mousemove', function (e) {
         if (!activeDrag || !cy) return;
@@ -274,6 +301,71 @@
     const loadingEl = document.getElementById('loading');
     const overlayEl = document.getElementById('node-overlay');
 
+    function renderColumnsInto(card, data) {
+        if (!data.columns || !data.columns.length) {
+            var banner = document.createElement('div');
+            banner.className = 'card-banner';
+            banner.textContent = 'Run `dbt docs generate` for column types';
+            card.appendChild(banner);
+            return;
+        }
+        var wrap = document.createElement('div');
+        wrap.className = 'card-columns';
+        wrap.addEventListener('wheel', function (e) {
+            e.stopPropagation();
+        }, { passive: true });
+        data.columns.forEach(function (c) {
+            var row = document.createElement('div');
+            row.className = 'col-row';
+            var name = document.createElement('span');
+            name.className = 'col-name';
+            if (c.isPrimaryKey) {
+                var pk = document.createElement('span');
+                pk.className = 'pk-badge';
+                pk.textContent = 'PK';
+                name.appendChild(pk);
+            }
+            name.appendChild(document.createTextNode(c.name));
+            var type = document.createElement('span');
+            type.className = 'col-type';
+            type.textContent = c.type || '';
+            row.appendChild(name);
+            row.appendChild(type);
+            wrap.appendChild(row);
+        });
+        card.appendChild(wrap);
+    }
+
+    function toggleExpand(nodeId) {
+        if (expandedIds.has(nodeId)) expandedIds.delete(nodeId);
+        else expandedIds.add(nodeId);
+        saveExpandedToStorage();
+        rerenderCardAndRelayout(nodeId);
+    }
+
+    function rerenderCardAndRelayout(nodeId) {
+        if (!cy) return;
+        var node = cy.getElementById(nodeId);
+        if (!node.length) return;
+        var oldRendered = node.renderedPosition();
+        var data = node.data();
+        var newHeight = cardHeightFor(data);
+        node.data('h', newHeight);
+
+        var elkOpts = Object.assign({}, ELK_LAYOUT_OPTIONS, {
+            'elk.direction': elkDirectionFor(currentLayoutDir)
+        });
+        cy.layout({ name: 'elk', fit: false, elk: elkOpts, workerUrl: 'elk.worker.js' })
+            .run()
+            .promiseOn('layoutstop').then(function () {
+                // Anchor: pan by difference so the toggled node stays under the cursor
+                var newRendered = node.renderedPosition();
+                var pan = cy.pan();
+                cy.pan({ x: pan.x + (oldRendered.x - newRendered.x), y: pan.y + (oldRendered.y - newRendered.y) });
+                buildNodeCards();
+            });
+    }
+
     function buildNodeCards() {
         // Clear existing cards
         Object.keys(nodeCards).forEach(function (id) {
@@ -300,6 +392,10 @@
                     card.classList.add('running');
                 }
 
+                // Wrap main row content
+                var mainRow = document.createElement('div');
+                mainRow.className = 'card-main-row';
+
                 var bar = document.createElement('div');
                 bar.className = 'card-bar';
                 card.appendChild(bar);
@@ -307,7 +403,7 @@
                 var icon = document.createElement('div');
                 icon.className = 'card-icon';
                 icon.innerHTML = ICONS[data.iconKey] || ICONS.view;
-                card.appendChild(icon);
+                mainRow.appendChild(icon);
 
                 var text = document.createElement('div');
                 text.className = 'card-text';
@@ -321,13 +417,32 @@
                     schema.textContent = data.schema;
                     text.appendChild(schema);
                 }
-                card.appendChild(text);
+                mainRow.appendChild(text);
 
                 var badge = document.createElement('div');
                 badge.className = 'card-failure-badge';
                 badge.textContent = '';
                 card.appendChild(badge);
                 card.classList.add('no-failure-badge');
+
+                var canExpand = !!(data.columns && data.columns.length) || data.resourceType === 'model' || data.resourceType === 'source' || data.resourceType === 'seed' || data.resourceType === 'snapshot';
+                if (canExpand) {
+                    var toggle = document.createElement('div');
+                    toggle.className = 'card-toggle';
+                    toggle.textContent = expandedIds.has(data.id) ? '▾' : '▸';
+                    toggle.addEventListener('mousedown', function (ev) { ev.stopPropagation(); });
+                    toggle.addEventListener('click', function (ev) {
+                        ev.stopPropagation();
+                        toggleExpand(data.id);
+                    });
+                    mainRow.appendChild(toggle);
+                }
+
+                card.appendChild(mainRow);
+
+                if (canExpand && expandedIds.has(data.id)) {
+                    renderColumnsInto(card, data);
+                }
             }
 
             if (data.isCurrent) card.classList.add('selected');
@@ -785,17 +900,27 @@
     }
 
     window.renderGraph = function (jsonStr) {
+        loadExpandedFromStorage();
         layoutCache.clear();
         try {
             const graph = typeof jsonStr === 'string' ? JSON.parse(jsonStr) : jsonStr;
             currentColorMode = graph.nodeColorMode || 'resource';
+
+            // Prune expanded ids that are no longer in the graph
+            var liveIds = new Set();
+            graph.nodes.forEach(function (n) { liveIds.add(n.id); });
+            Array.from(expandedIds).forEach(function (id) {
+                if (!liveIds.has(id)) expandedIds.delete(id);
+            });
+            saveExpandedToStorage();
+
             const elements = [];
 
             for (const node of graph.nodes) {
                 var name = node.name;
                 var w = CARD_WIDTH;
-                var h = CARD_HEIGHT;
-                if (node.resourceType === 'stub') { w = STUB_WIDTH; h = STUB_HEIGHT; }
+                var h = (node.resourceType === 'stub') ? STUB_HEIGHT : cardHeightFor(node);
+                if (node.resourceType === 'stub') { w = STUB_WIDTH; }
 
                 elements.push({
                     data: {
@@ -811,6 +936,7 @@
                         isCurrent: node.isCurrent,
                         stubDirection: node.stubDirection,
                         boundaryNodeId: node.boundaryNodeId,
+                        columns: node.columns || [],
                         iconKey: pickIconKey(node),
                         barColor: pickBarColor(node, graph.nodeColorMode),
                         w: w,
