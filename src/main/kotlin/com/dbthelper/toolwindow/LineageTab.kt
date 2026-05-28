@@ -102,6 +102,7 @@ class LineageTab(private val project: Project, private val parentDisposable: Dis
         connection.subscribe(SettingsChangeListener.TOPIC, object : SettingsChangeListener {
             override fun onSettingsChanged() {
                 refreshGraph()
+                pushFailureBadgeSetting()
             }
         })
 
@@ -182,6 +183,7 @@ class LineageTab(private val project: Project, private val parentDisposable: Dis
                     resolveCurrentModel()
                     refreshGraph()
                     pushRegenerateAttention()
+                    pushFailureBadgeSetting()
                 }
             }
         }, browser.cefBrowser)
@@ -495,6 +497,19 @@ class LineageTab(private val project: Project, private val parentDisposable: Dis
             val escaped = escapeJsJson(json)
             ApplicationManager.getApplication().invokeLater {
                 if (!isDisposed) executeJs("applyRunResults('$escaped')")
+            }
+        }
+    }
+
+    private fun pushFailureBadgeSetting() {
+        if (!isPageReady || isDisposed) return
+        val show = DbtHelperSettings.getInstance(project).state.showTestFailureBadge
+        ApplicationManager.getApplication().invokeLater {
+            if (!isDisposed) {
+                browser.cefBrowser.executeJavaScript(
+                    "window.__showFailureBadges = $show; if (window.repaintAllFailureBadges) window.repaintAllFailureBadges();",
+                    browser.cefBrowser.url, 0
+                )
             }
         }
     }

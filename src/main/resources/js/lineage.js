@@ -647,6 +647,7 @@
             card.classList.toggle('no-failure-badge', !(showBadges && n > 0));
         });
     }
+    window.repaintAllFailureBadges = repaintAllFailureBadges;
 
     // Merge {uniqueId: status} into the store; live-update cards if in status mode.
     window.setNodeStatuses = function (jsonStr) {
