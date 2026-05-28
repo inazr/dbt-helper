@@ -6,8 +6,8 @@ import com.dbthelper.actions.DbtVerb
 import com.dbthelper.core.DbtProjectLocator
 import com.dbthelper.core.DbtSelectorParser
 import com.dbthelper.core.ManifestService
-import com.dbthelper.core.ProfilesParser
 import com.dbthelper.core.ManifestUpdateListener
+import com.dbthelper.core.ProfilesParser
 import com.dbthelper.core.model.ManifestIndex
 import com.dbthelper.listeners.CurrentModelListener
 import com.dbthelper.settings.DbtHelperSettings
@@ -15,16 +15,16 @@ import com.dbthelper.settings.SettingsChangeListener
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.Disposable
-import com.intellij.openapi.ide.CopyPasteManager
-import java.awt.datatransfer.StringSelection
-import java.io.File
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.fileEditor.FileEditorManager
+import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.ui.components.JBTabbedPane
 import java.awt.BorderLayout
+import java.awt.datatransfer.StringSelection
+import java.io.File
 import javax.swing.JPanel
 
 /**
@@ -183,20 +183,18 @@ class DbtMainPanel(
         val compiledDir = File(root.path, "target/compiled/$projectName")
         val index = ManifestService.getInstance(project).getIndex()
         val baseName = DbtSelectorParser.parse(spec.selector)?.modelName
-
-        val matches = if (baseName != null) {
-            index.nodes.values.filter { it.resourceType == "model" && it.name == baseName }
-        } else {
-            emptyList()
+        val singleNode = baseName?.let { name ->
+            index.nodes.values
+                .filter { it.resourceType == "model" && it.name == name }
+                .singleOrNull()
         }
 
         val sql: String?
         val message: String
-        if (matches.size == 1) {
-            val node = matches.first()
-            val file = File(compiledDir, node.originalFilePath)
+        if (singleNode != null) {
+            val file = File(compiledDir, singleNode.originalFilePath)
             sql = if (file.isFile) file.readText() else null
-            message = "Copied compiled SQL for ${node.name} to clipboard"
+            message = "Copied compiled SQL for ${singleNode.name} to clipboard"
         } else {
             val blocks = StringBuilder()
             var count = 0

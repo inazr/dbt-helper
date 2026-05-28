@@ -17,6 +17,9 @@ class ProfilesParser(private val project: Project) {
     @Volatile
     private var cachedConfig: ProfilesConfig? = null
 
+    @Volatile
+    private var cachedProjectName: String? = null
+
     fun parse(): ProfilesConfig? {
         cachedConfig?.let { return it }
 
@@ -73,13 +76,14 @@ class ProfilesParser(private val project: Project) {
 
     /** The dbt project's `name:` from dbt_project.yml (used for target/compiled/<name>/…). */
     fun getProjectName(): String? {
+        cachedProjectName?.let { return it }
         return try {
             val root = locator.findProjectRoot() ?: return null
             val dbtProjectFile = root.findChild("dbt_project.yml") ?: return null
             val yaml = Yaml()
             @Suppress("UNCHECKED_CAST")
             val data = dbtProjectFile.inputStream.use { yaml.load<Map<String, Any>>(it) }
-            data["name"] as? String
+            (data["name"] as? String).also { cachedProjectName = it }
         } catch (e: Exception) {
             logger.warn("Failed to read project name from dbt_project.yml", e)
             null
@@ -92,6 +96,7 @@ class ProfilesParser(private val project: Project) {
 
     fun invalidateCache() {
         cachedConfig = null
+        cachedProjectName = null
     }
 
     companion object {
