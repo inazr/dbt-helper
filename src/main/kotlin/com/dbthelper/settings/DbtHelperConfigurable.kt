@@ -124,6 +124,11 @@ class DbtHelperConfigurable(private val project: Project) : BoundConfigurable("Y
                     .comment("Display dbt exposures (dashboards, reports) in the lineage graph")
             }
             row {
+                checkBox("Show test failure badge on lineage cards")
+                    .bindSelected(settings.state::showTestFailureBadge)
+                    .comment("Show a red badge with the failure count on cards that had test failures in the last run")
+            }
+            row {
                 checkBox("Send system notifications")
                     .bindSelected(settings.state::enableSystemNotifications)
                     .comment("Send native OS notifications (macOS Notification Center) when dbt commands finish")

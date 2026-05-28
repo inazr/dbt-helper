@@ -89,6 +89,8 @@ for <a href="https://www.getdbt.com/">dbt</a> projects directly into your JetBra
         <projectService serviceImplementation="com.dbthelper.core.CatalogParser"/>
         <projectService serviceImplementation="com.dbthelper.core.ProfilesParser"/>
         <projectService serviceImplementation="com.dbthelper.core.DbtRunState"/>
+        <projectService serviceImplementation="com.dbthelper.listeners.RunResultsWatcher"/>
+        <postStartupActivity implementation="com.dbthelper.listeners.RunResultsWatcherStarter"/>
 
         <!-- Tool Window -->
         <toolWindow id="YADT"

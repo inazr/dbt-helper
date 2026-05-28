@@ -102,8 +102,16 @@ class LineageTab(private val project: Project, private val parentDisposable: Dis
         connection.subscribe(SettingsChangeListener.TOPIC, object : SettingsChangeListener {
             override fun onSettingsChanged() {
                 refreshGraph()
+                pushFailureBadgeSetting()
             }
         })
+
+        // Subscribe to run-results updates
+        connection.subscribe(
+            com.dbthelper.actions.RunResultsUpdateListener.TOPIC,
+            com.dbthelper.actions.RunResultsUpdateListener { results -> pushRunResultsToJs(results) }
+        )
+        pushRunResultsToJs(project.getService(com.dbthelper.listeners.RunResultsWatcher::class.java).current())
 
         // Listen for theme changes
         val appConnection = ApplicationManager.getApplication().messageBus.connect(this)
@@ -175,6 +183,7 @@ class LineageTab(private val project: Project, private val parentDisposable: Dis
                     resolveCurrentModel()
                     refreshGraph()
                     pushRegenerateAttention()
+                    pushFailureBadgeSetting()
                 }
             }
         }, browser.cefBrowser)
@@ -448,18 +457,17 @@ class LineageTab(private val project: Project, private val parentDisposable: Dis
         refreshGraph()
     }
 
-    /** Called at GO: clear statuses, build the relation index, mark buildable nodes queued. */
+    /** Called at GO: build the relation index and seed targeted nodes as queued (without clearing unrelated statuses). */
     fun beginRunStatus() {
         if (isDisposed) return
         ApplicationManager.getApplication().executeOnPooledThread {
             if (isDisposed) return@executeOnPooledThread
             runRelationKeyIndex = buildRelationKeyIndex(ManifestService.getInstance(project).getIndex())
-            val queued = lastBuildableNodeIds.associateWith { "queued" }
-            val escaped = escapeJsJson(mapper.writeValueAsString(queued))
+            val targetedIds = lastBuildableNodeIds
+            val idsJson = escapeJsJson(mapper.writeValueAsString(targetedIds))
             ApplicationManager.getApplication().invokeLater {
                 if (isDisposed) return@invokeLater
-                executeJs("clearNodeStatuses()")
-                if (queued.isNotEmpty()) executeJs("setNodeStatuses('$escaped')")
+                if (targetedIds.isNotEmpty()) executeJs("seedQueuedStatuses('$idsJson')")
             }
         }
     }
@@ -488,6 +496,40 @@ class LineageTab(private val project: Project, private val parentDisposable: Dis
             val escaped = escapeJsJson(json)
             ApplicationManager.getApplication().invokeLater {
                 if (!isDisposed) executeJs("applyRunResults('$escaped')")
+            }
+        }
+    }
+
+    private fun pushFailureBadgeSetting() {
+        if (!isPageReady || isDisposed) return
+        val show = DbtHelperSettings.getInstance(project).state.showTestFailureBadge
+        ApplicationManager.getApplication().invokeLater {
+            if (!isDisposed) {
+                browser.cefBrowser.executeJavaScript(
+                    "window.__showFailureBadges = $show; if (window.repaintAllFailureBadges) window.repaintAllFailureBadges();",
+                    browser.cefBrowser.url, 0
+                )
+            }
+        }
+    }
+
+    private fun pushRunResultsToJs(results: Map<String, com.dbthelper.actions.RunResult>) {
+        if (!isPageReady || isDisposed) return
+        val payload = mapper.writeValueAsString(results.mapValues { (_, r) ->
+            mapOf(
+                "status" to r.status.wire,
+                "message" to r.message,
+                "failures" to (r.failures ?: 0),
+                "startedAt" to r.startedAt?.toString(),
+                "executionTime" to r.executionTime
+            )
+        })
+        ApplicationManager.getApplication().invokeLater {
+            if (!isDisposed) {
+                browser.cefBrowser.executeJavaScript(
+                    "window.setRunResults && window.setRunResults(${payload});",
+                    browser.cefBrowser.url, 0
+                )
             }
         }
     }

@@ -133,6 +133,7 @@
     let nodeCards = {};
     let currentColorMode = 'resource';
     let nodeStatus = {}; // uniqueId -> status string (see STATUS_BAR_COLORS keys)
+    var nodeFailures = {}; // uniqueId -> failure count (integer)
     let activeDrag = null;
 
     window.addEventListener('mousemove', function (e) {
@@ -297,6 +298,12 @@
                     text.appendChild(schema);
                 }
                 card.appendChild(text);
+
+                var badge = document.createElement('div');
+                badge.className = 'card-failure-badge';
+                badge.textContent = '';
+                card.appendChild(badge);
+                card.classList.add('no-failure-badge');
             }
 
             if (data.isCurrent) card.classList.add('selected');
@@ -629,6 +636,19 @@
         Object.keys(nodeCards).forEach(applyStatusToCard);
     }
 
+    function repaintAllFailureBadges() {
+        var showBadges = window.__showFailureBadges !== false; // default true
+        Object.keys(nodeCards).forEach(function (id) {
+            var card = nodeCards[id];
+            if (!card || card.classList.contains('stub')) return;
+            var n = nodeFailures[id] || 0;
+            var badge = card.querySelector('.card-failure-badge');
+            if (badge) badge.textContent = n > 0 ? String(n) : '';
+            card.classList.toggle('no-failure-badge', !(showBadges && n > 0));
+        });
+    }
+    window.repaintAllFailureBadges = repaintAllFailureBadges;
+
     // Merge {uniqueId: status} into the store; live-update cards if in status mode.
     window.setNodeStatuses = function (jsonStr) {
         try {
@@ -653,6 +673,54 @@
         nodeStatus = {};
         if (currentColorMode === 'status') repaintAllStatusCards();
     };
+
+    window.seedQueuedStatuses = function (idsJson) {
+        try {
+            var ids = typeof idsJson === 'string' ? JSON.parse(idsJson) : idsJson;
+            ids.forEach(function (id) { nodeStatus[id] = 'queued'; });
+            repaintAllStatusCards();
+        } catch (e) { console.error('seedQueuedStatuses error:', e); }
+    };
+
+    window.setRunResults = function (payloadOrJson) {
+        try {
+            var map = typeof payloadOrJson === 'string' ? JSON.parse(payloadOrJson) : payloadOrJson;
+            nodeStatus = {};
+            nodeFailures = {};
+            Object.keys(map).forEach(function (id) {
+                nodeStatus[id] = map[id].status;
+                if (map[id].failures && map[id].failures > 0) {
+                    nodeFailures[id] = map[id].failures;
+                }
+            });
+            repaintAllStatusCards();
+            if (typeof repaintAllFailureBadges === 'function') repaintAllFailureBadges();
+            renderRunResultsHint(map);
+        } catch (e) { console.error('setRunResults error:', e); }
+    };
+
+    function renderRunResultsHint(map) {
+        var hintEl = document.getElementById('run-results-hint');
+        if (!hintEl) return;
+        var count = map ? Object.keys(map).length : 0;
+        if (count === 0) {
+            hintEl.style.display = 'none';
+            return;
+        }
+        var startedSeconds = 0;
+        var startedAtIso = null;
+        Object.keys(map).forEach(function (id) {
+            if (map[id].startedAt) {
+                var t = Date.parse(map[id].startedAt);
+                if (t > startedSeconds) { startedSeconds = t; startedAtIso = map[id].startedAt; }
+            }
+        });
+        var label = startedAtIso
+            ? new Date(startedAtIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            : 'recent run';
+        hintEl.textContent = 'Showing results from last run at ' + label + ' (' + count + ' models).';
+        hintEl.style.display = 'block';
+    }
 
     window.renderGraph = function (jsonStr) {
         layoutCache.clear();

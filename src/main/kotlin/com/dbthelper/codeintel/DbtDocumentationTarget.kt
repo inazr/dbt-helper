@@ -117,11 +117,13 @@ class DbtDocumentationTarget(
     private val displayName: String
 ) : DocumentationTarget {
 
-    override fun createPointer(): Pointer<out DocumentationTarget> {
+    override fun createPointer(): Pointer<DbtDocumentationTarget> {
         val p = project
         val k = kind
         val n = displayName
-        return Pointer { DbtDocumentationTarget(p, k, n) }
+        return object : Pointer<DbtDocumentationTarget> {
+            override fun dereference(): DbtDocumentationTarget = DbtDocumentationTarget(p, k, n)
+        }
     }
 
     override fun computePresentation(): TargetPresentation =

@@ -28,6 +28,12 @@ dependencies {
         val version = providers.gradleProperty("platformVersion").get()
         create(type, version)
     }
+
+    testImplementation(libs.junit.api)
+    testImplementation(libs.junit.params)
+    testRuntimeOnly(libs.junit.engine)
+    // IntelliJ Platform's JUnit5TestEnvironmentInitializer SPI needs JUnit 4 on test runtime
+    testRuntimeOnly("junit:junit:4.13.2")
 }
 
 intellijPlatform {
@@ -55,5 +61,9 @@ intellijPlatform {
 tasks {
     wrapper {
         gradleVersion = "8.12"
+    }
+
+    test {
+        useJUnitPlatform()
     }
 }

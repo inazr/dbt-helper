@@ -466,6 +466,35 @@
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
+        .card-failure-badge {
+            position: absolute;
+            top: 4px;
+            right: 6px;
+            min-width: 14px;
+            height: 14px;
+            padding: 0 4px;
+            border-radius: 7px;
+            background: #F85149;
+            color: #fff;
+            font-size: 10px;
+            font-weight: 700;
+            line-height: 14px;
+            text-align: center;
+            pointer-events: none;
+        }
+        .card-node.no-failure-badge .card-failure-badge { display: none; }
+        .run-results-hint {
+            position: absolute;
+            top: 44px;
+            left: 8px;
+            z-index: 100;
+            padding: 4px 8px;
+            background: rgba(255, 200, 0, 0.08);
+            color: var(--text-color);
+            border-left: 2px solid #E3B341;
+            font-size: 11px;
+            pointer-events: none;
+        }
     </style>
 </head>
 <body>
@@ -477,6 +506,7 @@
         <input id="search-input" type="text" placeholder="Search nodes..." />
         <button id="search-clear" title="Clear">&times;</button>
     </div>
+    <div id="run-results-hint" class="run-results-hint" style="display: none"></div>
     <div id="controls">
         <button id="regenerate-docs" title="Regenerate dbt docs">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" style="width:14px;height:14px;">
