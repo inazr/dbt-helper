@@ -298,6 +298,12 @@
                     text.appendChild(schema);
                 }
                 card.appendChild(text);
+
+                var badge = document.createElement('div');
+                badge.className = 'card-failure-badge';
+                badge.textContent = '';
+                card.appendChild(badge);
+                card.classList.add('no-failure-badge');
             }
 
             if (data.isCurrent) card.classList.add('selected');
@@ -628,6 +634,18 @@
     // Repaint every card from nodeStatus (status mode only). Not a graph re-render.
     function repaintAllStatusCards() {
         Object.keys(nodeCards).forEach(applyStatusToCard);
+    }
+
+    function repaintAllFailureBadges() {
+        var showBadges = window.__showFailureBadges !== false; // default true
+        Object.keys(nodeCards).forEach(function (id) {
+            var card = nodeCards[id];
+            if (!card || card.classList.contains('stub')) return;
+            var n = nodeFailures[id] || 0;
+            var badge = card.querySelector('.card-failure-badge');
+            if (badge) badge.textContent = n > 0 ? String(n) : '';
+            card.classList.toggle('no-failure-badge', !(showBadges && n > 0));
+        });
     }
 
     // Merge {uniqueId: status} into the store; live-update cards if in status mode.

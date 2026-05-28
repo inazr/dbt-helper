@@ -466,6 +466,23 @@
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
+        .card-failure-badge {
+            position: absolute;
+            top: 4px;
+            right: 6px;
+            min-width: 14px;
+            height: 14px;
+            padding: 0 4px;
+            border-radius: 7px;
+            background: #F85149;
+            color: #fff;
+            font-size: 10px;
+            font-weight: 700;
+            line-height: 14px;
+            text-align: center;
+            pointer-events: none;
+        }
+        .card-node.no-failure-badge .card-failure-badge { display: none; }
     </style>
 </head>
 <body>
