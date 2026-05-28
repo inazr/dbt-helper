@@ -457,18 +457,17 @@ class LineageTab(private val project: Project, private val parentDisposable: Dis
         refreshGraph()
     }
 
-    /** Called at GO: clear statuses, build the relation index, mark buildable nodes queued. */
+    /** Called at GO: build the relation index and seed targeted nodes as queued (without clearing unrelated statuses). */
     fun beginRunStatus() {
         if (isDisposed) return
         ApplicationManager.getApplication().executeOnPooledThread {
             if (isDisposed) return@executeOnPooledThread
             runRelationKeyIndex = buildRelationKeyIndex(ManifestService.getInstance(project).getIndex())
-            val queued = lastBuildableNodeIds.associateWith { "queued" }
-            val escaped = escapeJsJson(mapper.writeValueAsString(queued))
+            val targetedIds = lastBuildableNodeIds
+            val idsJson = escapeJsJson(mapper.writeValueAsString(targetedIds))
             ApplicationManager.getApplication().invokeLater {
                 if (isDisposed) return@invokeLater
-                executeJs("clearNodeStatuses()")
-                if (queued.isNotEmpty()) executeJs("setNodeStatuses('$escaped')")
+                if (targetedIds.isNotEmpty()) executeJs("seedQueuedStatuses('$idsJson')")
             }
         }
     }

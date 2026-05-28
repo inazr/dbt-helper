@@ -674,6 +674,14 @@
         if (currentColorMode === 'status') repaintAllStatusCards();
     };
 
+    window.seedQueuedStatuses = function (idsJson) {
+        try {
+            var ids = typeof idsJson === 'string' ? JSON.parse(idsJson) : idsJson;
+            ids.forEach(function (id) { nodeStatus[id] = 'queued'; });
+            repaintAllStatusCards();
+        } catch (e) { console.error('seedQueuedStatuses error:', e); }
+    };
+
     window.setRunResults = function (payloadOrJson) {
         try {
             var map = typeof payloadOrJson === 'string' ? JSON.parse(payloadOrJson) : payloadOrJson;
