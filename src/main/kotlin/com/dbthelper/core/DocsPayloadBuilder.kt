@@ -80,7 +80,7 @@ object DocsPayloadBuilder {
                     "name" to col.name,
                     "type" to (col.dataType ?: ""),
                     "description" to col.description,
-                    "isPrimaryKey" to false,
+                    "isPrimaryKey" to col.isPrimaryKey,
                     "fk" to null
                 )
             },
@@ -117,7 +117,12 @@ object DocsPayloadBuilder {
     }
 
     private fun primaryKeyColumns(nodeId: String, index: ManifestIndex): Set<String> {
-        // Heuristic: column has both unique and not_null tests
+        val declared = index.nodes[nodeId]?.columns?.values
+            ?.filter { it.isPrimaryKey }
+            ?.map { it.name }
+            ?.toSet()
+            ?: emptySet()
+        // Heuristic fallback: column has both unique and not_null tests
         val tests = findTestsForNode(nodeId, index)
         val byColumn = mutableMapOf<String, MutableSet<String>>()
         for (t in tests) {
@@ -129,7 +134,8 @@ object DocsPayloadBuilder {
             }
             byColumn.getOrPut(col) { mutableSetOf() }.add(kind)
         }
-        return byColumn.filterValues { it.containsAll(listOf("unique", "not_null")) }.keys
+        val derived = byColumn.filterValues { it.containsAll(listOf("unique", "not_null")) }.keys
+        return declared + derived
     }
 
     private fun foreignKeyRefs(nodeId: String, index: ManifestIndex): Map<String, String> {

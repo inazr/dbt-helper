@@ -294,11 +294,14 @@ class ManifestService(private val project: Project) : Disposable {
         val fields = columnsNode.fields()
         while (fields.hasNext()) {
             val (name, node) = fields.next()
+            val tags = node.path("tags").map { it.asText() }
+            val hasPkConstraint = node.path("constraints").any { it.path("type").asText() == "primary_key" }
             result[name] = DbtColumn(
                 name = name,
                 description = node.path("description").asText(""),
                 dataType = node.path("data_type").asText(null),
-                tags = node.path("tags").map { it.asText() }
+                tags = tags,
+                isPrimaryKey = hasPkConstraint || "pk" in tags
             )
         }
         return result

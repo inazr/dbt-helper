@@ -313,7 +313,7 @@ class LineageGraphBuilder(
                 filePath = node.originalFilePath,
                 description = node.description.ifEmpty { null },
                 columns = node.columns.values.map { col ->
-                    ColumnNode(col.name, col.dataType, col.description.ifEmpty { null })
+                    ColumnNode(col.name, col.dataType, col.description.ifEmpty { null }, col.isPrimaryKey)
                 },
                 depth = depth,
                 isCurrent = isCurrent,
@@ -343,7 +343,7 @@ class LineageGraphBuilder(
                 filePath = source.originalFilePath,
                 description = source.description.ifEmpty { null },
                 columns = source.columns.values.map { col ->
-                    ColumnNode(col.name, col.dataType, col.description.ifEmpty { null })
+                    ColumnNode(col.name, col.dataType, col.description.ifEmpty { null }, col.isPrimaryKey)
                 },
                 depth = depth,
                 isCurrent = isCurrent,

@@ -37,7 +37,6 @@ data class ColumnNode(
     @com.fasterxml.jackson.annotation.JsonProperty("type")
     val dataType: String?,
     val description: String?,
-    // TODO: derive from ColumnInfo.constraints (primary_key) or tags (pk) in LineageGraphBuilder
     val isPrimaryKey: Boolean = false
 )
 

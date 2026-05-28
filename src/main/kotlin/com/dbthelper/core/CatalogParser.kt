@@ -56,7 +56,8 @@ class CatalogParser(private val project: Project) {
                     name = colName,
                     description = existing?.description ?: "",
                     dataType = colNode.path("type").asText(null) ?: existing?.dataType,
-                    tags = existing?.tags ?: emptyList()
+                    tags = existing?.tags ?: emptyList(),
+                    isPrimaryKey = existing?.isPrimaryKey ?: false
                 )
             }
             nodes[id] = existingNode.copy(columns = mergedColumns)
@@ -80,7 +81,8 @@ class CatalogParser(private val project: Project) {
                     name = colName,
                     description = existing?.description ?: "",
                     dataType = colNode.path("type").asText(null) ?: existing?.dataType,
-                    tags = existing?.tags ?: emptyList()
+                    tags = existing?.tags ?: emptyList(),
+                    isPrimaryKey = existing?.isPrimaryKey ?: false
                 )
             }
             sources[id] = existingSource.copy(columns = mergedColumns)
