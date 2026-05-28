@@ -1389,6 +1389,7 @@
         try {
             var p = typeof jsonStr === 'string' ? JSON.parse(jsonStr) : jsonStr;
             lastDocsPayload = p;
+            if (sidebarEl) sidebarEl.classList.remove('freshness-mode');
             renderDocsHeader(p);
             renderDocsDescription(p);
             renderDocsPills(p);
@@ -1398,6 +1399,73 @@
             renderDocsMetadata(p);
         } catch (e) {
             console.error('showDocs error:', e);
+        }
+    };
+
+    window.showFreshnessDetail = function (jsonStr) {
+        try {
+            var p = typeof jsonStr === 'string' ? JSON.parse(jsonStr) : jsonStr;
+            var nameEl = document.getElementById('docs-name');
+            var schemaEl = document.getElementById('docs-schema');
+            if (nameEl) nameEl.textContent = p.name || '—';
+            if (schemaEl) schemaEl.textContent = p.relation || '';
+
+            var panel = document.getElementById('docs-freshness-panel');
+            if (!panel) return;
+
+            var STATUS_META = {
+                pass:      { label: 'Fresh',                                  cls: 'fresh-pass',      dot: '●' },
+                warn:      { label: 'Stale (warn)',                           cls: 'fresh-warn',      dot: '●' },
+                error:     { label: 'Stale (error)',                          cls: 'fresh-error',     dot: '⬤' },
+                no_result: { label: 'No freshness result for this source',    cls: 'fresh-no_result', dot: '○' },
+                no_data:   { label: 'sources.json not found',                 cls: 'fresh-no_data',   dot: '○' }
+            };
+            var meta = STATUS_META[p.status] || STATUS_META.no_result;
+
+            var html = '';
+            html += '<div class="freshness-banner ' + meta.cls + '">';
+            html += '<span class="dot">' + meta.dot + '</span><span>' + escapeHtml(meta.label) + '</span>';
+            html += '</div>';
+
+            if (p.message) {
+                html += '<div class="freshness-message">' + escapeHtml(p.message) + '</div>';
+            }
+
+            if (p.status === 'no_data') {
+                html += '<div class="freshness-hint">Run <code>dbt source freshness</code> to populate <code>target/sources.json</code>.</div>';
+            } else if (p.status === 'no_result') {
+                html += '<div class="freshness-hint">No freshness criteria configured for this source, or it was excluded from the last freshness run.</div>';
+            }
+
+            var rows = [];
+            if (p.loadedAtField) rows.push(['Loaded at', p.loadedAtField]);
+            if (p.warnAfter) rows.push(['Warn after', p.warnAfter]);
+            if (p.errorAfter) rows.push(['Error after', p.errorAfter]);
+            if (p.filePath) rows.push(['Defined in', p.filePath]);
+            if (rows.length) {
+                html += '<table class="meta-table" style="margin-top: 8px;">';
+                for (var i = 0; i < rows.length; i++) {
+                    html += '<tr><td class="k">' + escapeHtml(rows[i][0]) + '</td><td class="v">' + escapeHtml(String(rows[i][1])) + '</td></tr>';
+                }
+                html += '</table>';
+            }
+
+            html += '<div class="freshness-back-row"><button class="freshness-back-btn" id="freshness-back-btn">View source docs</button></div>';
+            panel.innerHTML = html;
+
+            var backBtn = document.getElementById('freshness-back-btn');
+            if (backBtn) {
+                backBtn.addEventListener('click', function () {
+                    sendToKotlin('previewNode', { nodeId: p.id });
+                });
+            }
+
+            if (sidebarEl) {
+                sidebarEl.classList.add('freshness-mode');
+                setSidebarOpen(true);
+            }
+        } catch (e) {
+            console.error('showFreshnessDetail error:', e);
         }
     };
 

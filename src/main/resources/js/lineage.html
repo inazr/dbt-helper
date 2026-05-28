@@ -486,6 +486,37 @@
         .docs-content .meta-table td.v { color: var(--card-name); word-break: break-all; }
         .docs-content .empty { padding: 16px; color: var(--card-schema); font-style: italic; font-size: 12px; }
 
+        /* Freshness detail panel: shown when the source's freshness dot is clicked.
+           Reuses the sidebar chrome — when active, the docs tabs + content are hidden. */
+        #docs-freshness-panel { display: none; padding: 0; }
+        #docs-sidebar.freshness-mode .docs-tabs { display: none; }
+        #docs-sidebar.freshness-mode .docs-content { display: none; }
+        #docs-sidebar.freshness-mode .docs-description { display: none; }
+        #docs-sidebar.freshness-mode .docs-pills { display: none; }
+        #docs-sidebar.freshness-mode #docs-freshness-panel { display: block; }
+        .freshness-banner {
+            padding: 12px 16px;
+            font-size: 12px;
+            font-weight: 600;
+            border-bottom: 1px solid var(--card-border);
+            display: flex; align-items: center; gap: 8px;
+        }
+        .freshness-banner .dot { font-size: 14px; line-height: 1; }
+        .freshness-banner.fresh-pass  { background: rgba(63, 185, 80, 0.12);  color: #3FB950; }
+        .freshness-banner.fresh-warn  { background: rgba(227, 179, 65, 0.14); color: #E3B341; }
+        .freshness-banner.fresh-error { background: rgba(248, 81, 73, 0.14);  color: #F85149; }
+        .freshness-banner.fresh-no_result,
+        .freshness-banner.fresh-no_data { background: var(--card-selected-bg); color: var(--card-schema); }
+        .freshness-message { padding: 10px 16px; font-size: 12px; color: var(--card-name); border-bottom: 1px solid var(--card-border); }
+        .freshness-hint { padding: 10px 16px; font-size: 12px; color: var(--card-schema); font-style: italic; border-bottom: 1px solid var(--card-border); }
+        .freshness-hint code { font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; background: var(--card-selected-bg); padding: 1px 4px; border-radius: 3px; }
+        .freshness-back-row { padding: 10px 16px; }
+        .freshness-back-btn {
+            background: transparent; border: 1px solid var(--card-border); color: var(--card-name);
+            padding: 4px 10px; font-size: 11px; cursor: pointer; border-radius: 3px;
+        }
+        .freshness-back-btn:hover { background: var(--card-selected-bg); }
+
         #toggle-sidebar.active { background: var(--card-selected-bg); border-color: var(--card-selected-border); }
         #regenerate-docs.needs-attention {
             background: var(--card-selected-bg);
@@ -697,6 +728,7 @@
             <div class="docs-section" id="docs-section-sql"></div>
             <div class="docs-section" id="docs-section-metadata"></div>
         </div>
+        <div id="docs-freshness-panel"></div>
     </aside>
     <script src="lineage.js"></script>
 </body>

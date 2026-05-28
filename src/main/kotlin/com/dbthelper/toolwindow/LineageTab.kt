@@ -6,6 +6,7 @@ import com.dbthelper.actions.DbtRunStatusParser
 import com.dbthelper.actions.DbtVerb
 import com.dbthelper.actions.RunResultsReconciler
 import com.dbthelper.core.DocsPayloadBuilder
+import com.dbthelper.core.FreshnessDetailBuilder
 import com.dbthelper.core.LineageGraphBuilder
 import com.dbthelper.core.ManifestService
 import com.dbthelper.core.SourcesFreshnessParser
@@ -205,10 +206,8 @@ class LineageTab(
                         refreshGraph()
                     }
                     "openFreshnessDetail" -> {
-                        // TODO: open a dedicated freshness detail view in a future PR.
-                        // For now, re-use the existing docs sidebar preview for the source node.
                         val nodeId = payload?.get("nodeId")?.asText() ?: return@addHandler JBCefJSQuery.Response("ok")
-                        pushDocsToSidebar(nodeId)
+                        pushFreshnessDetailToSidebar(nodeId)
                     }
                 }
                 JBCefJSQuery.Response("ok")
@@ -522,6 +521,31 @@ class LineageTab(
                 }
             } catch (e: Exception) {
                 logger.warn("Error building docs payload", e)
+            }
+        }
+    }
+
+    private fun pushFreshnessDetailToSidebar(nodeId: String) {
+        if (isDisposed) return
+        ApplicationManager.getApplication().executeOnPooledThread {
+            try {
+                if (isDisposed) return@executeOnPooledThread
+                val service = ManifestService.getInstance(project)
+                val index = service.getIndex()
+                val sourcesFile = service.getLocator().getTargetDir()?.let { target ->
+                    java.nio.file.Paths.get(target.path, "sources.json")
+                }
+                val available = sourcesFile?.let { java.nio.file.Files.exists(it) } ?: false
+                val freshness = sourcesFile?.let { SourcesFreshnessParser().parseFile(it) } ?: emptyMap()
+                val payload = FreshnessDetailBuilder.build(nodeId, index, freshness, available)
+                    ?: return@executeOnPooledThread
+                val json = mapper.writeValueAsString(payload)
+                val escaped = json.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n")
+                ApplicationManager.getApplication().invokeLater {
+                    if (!isDisposed) executeJs("showFreshnessDetail('$escaped')")
+                }
+            } catch (e: Exception) {
+                logger.warn("Error building freshness detail payload", e)
             }
         }
     }
