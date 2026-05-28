@@ -1148,6 +1148,36 @@
         }
     };
 
+    window.showMultiSelectPlaceholder = function (count) {
+        // Update sidebar header
+        var iconEl = document.getElementById('docs-icon');
+        var nameEl = document.getElementById('docs-name');
+        var schemaEl = document.getElementById('docs-schema');
+        var descEl = document.getElementById('docs-description');
+        var pillsEl = document.getElementById('docs-pills');
+        if (iconEl) iconEl.textContent = '';
+        if (nameEl) nameEl.textContent = count + ' nodes selected';
+        if (schemaEl) schemaEl.textContent = '';
+        if (descEl) { descEl.classList.add('empty'); document.getElementById('docs-desc-text').textContent = ''; }
+        if (pillsEl) pillsEl.textContent = '';
+        // Clear all section content and show a message in the columns section
+        var sections = document.querySelectorAll('.docs-section');
+        sections.forEach(function (s) { s.textContent = ''; s.classList.remove('active'); });
+        var colSection = document.getElementById('docs-section-columns');
+        if (colSection) {
+            colSection.classList.add('active');
+            var hint = document.createElement('p');
+            hint.className = 'empty';
+            hint.textContent = 'Click one node to see its details.';
+            colSection.appendChild(hint);
+        }
+        // Ensure sidebar is open
+        var sidebarEl = document.getElementById('docs-sidebar');
+        if (sidebarEl) sidebarEl.classList.add('open');
+        var toggleBtn = document.getElementById('toggle-sidebar');
+        if (toggleBtn) toggleBtn.classList.add('active');
+    };
+
     window.applyTheme = function (isDark) {
         var root = document.documentElement;
         document.body.classList.toggle('theme-light', !isDark);
