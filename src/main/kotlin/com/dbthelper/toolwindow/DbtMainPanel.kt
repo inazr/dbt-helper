@@ -4,6 +4,7 @@ import com.dbthelper.actions.DbtCommandRunner
 import com.dbthelper.actions.DbtCommandSpec
 import com.dbthelper.actions.DbtVerb
 import com.dbthelper.core.DbtProjectLocator
+import com.dbthelper.core.DbtRunState
 import com.dbthelper.core.DbtSelectorParser
 import com.dbthelper.core.ManifestService
 import com.dbthelper.core.ManifestUpdateListener
@@ -106,6 +107,7 @@ class DbtMainPanel(
         val generation = ++runGeneration
         userStopped = false
         isRunning = true
+        DbtRunState.getInstance(project).setRunning(true)
         actionBar.setRunning(true)
         tabs.selectedComponent = runnerTab
         runnerTab.clear()
@@ -130,6 +132,7 @@ class DbtMainPanel(
                 ApplicationManager.getApplication().invokeLater {
                     if (generation != runGeneration) return@invokeLater
                     isRunning = false
+                    DbtRunState.getInstance(project).setRunning(false)
                     currentProcess = null
                     actionBar.setRunning(false)
                     if (spec.verb in statusVerbs) lineageTab.applyRunResults()
@@ -169,6 +172,7 @@ class DbtMainPanel(
         currentProcess = null
         runnerTab.appendLine("\n--- Process terminated ---")
         isRunning = false
+        DbtRunState.getInstance(project).setRunning(false)
         actionBar.setRunning(false)
     }
 
