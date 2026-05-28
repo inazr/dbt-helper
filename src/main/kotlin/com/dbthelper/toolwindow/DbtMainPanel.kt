@@ -3,8 +3,10 @@ package com.dbthelper.toolwindow
 import com.dbthelper.actions.DbtCommandRunner
 import com.dbthelper.actions.DbtCommandSpec
 import com.dbthelper.actions.DbtVerb
+import com.dbthelper.core.DbtProjectLocator
 import com.dbthelper.core.DbtSelectorParser
 import com.dbthelper.core.ManifestService
+import com.dbthelper.core.ProfilesParser
 import com.dbthelper.core.ManifestUpdateListener
 import com.dbthelper.core.model.ManifestIndex
 import com.dbthelper.listeners.CurrentModelListener
@@ -13,6 +15,9 @@ import com.dbthelper.settings.SettingsChangeListener
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.Disposable
+import com.intellij.openapi.ide.CopyPasteManager
+import java.awt.datatransfer.StringSelection
+import java.io.File
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.project.Project
@@ -134,6 +139,10 @@ class DbtMainPanel(
                         runnerTab.appendLine("\n" + (table ?: "(no data returned)"))
                     }
 
+                    if (spec.verb == DbtVerb.COMPILE && result.success) {
+                        copyCompiledToClipboard(spec)
+                    }
+
                     if (!userStopped) {
                         val label = "dbt ${spec.verb.display.lowercase()}"
                         if (result.success) {
@@ -155,6 +164,61 @@ class DbtMainPanel(
         runnerTab.appendLine("\n--- Process terminated ---")
         isRunning = false
         actionBar.setRunning(false)
+    }
+
+    /**
+     * After a successful `dbt compile`, read the freshly written compiled SQL
+     * from target/compiled/<project>/… and put it on the clipboard. For a
+     * selector that resolves to a single model, copy that model; otherwise
+     * concatenate every model that has a compiled file, each under a
+     * `-- <name>` header.
+     */
+    private fun copyCompiledToClipboard(spec: DbtCommandSpec) {
+        val root = DbtProjectLocator(project).findProjectRoot()
+        val projectName = ProfilesParser.getInstance(project).getProjectName()
+        if (root == null || projectName == null) {
+            notify("Compile succeeded but the compiled SQL location could not be resolved", NotificationType.WARNING)
+            return
+        }
+        val compiledDir = File(root.path, "target/compiled/$projectName")
+        val index = ManifestService.getInstance(project).getIndex()
+        val baseName = DbtSelectorParser.parse(spec.selector)?.modelName
+
+        val matches = if (baseName != null) {
+            index.nodes.values.filter { it.resourceType == "model" && it.name == baseName }
+        } else {
+            emptyList()
+        }
+
+        val sql: String?
+        val message: String
+        if (matches.size == 1) {
+            val node = matches.first()
+            val file = File(compiledDir, node.originalFilePath)
+            sql = if (file.isFile) file.readText() else null
+            message = "Copied compiled SQL for ${node.name} to clipboard"
+        } else {
+            val blocks = StringBuilder()
+            var count = 0
+            index.nodes.values
+                .filter { it.resourceType == "model" }
+                .forEach { node ->
+                    val file = File(compiledDir, node.originalFilePath)
+                    if (file.isFile) {
+                        blocks.append("-- ${node.name}\n").append(file.readText().trim()).append("\n\n")
+                        count++
+                    }
+                }
+            sql = if (count > 0) blocks.toString() else null
+            message = "Copied compiled SQL for $count models to clipboard"
+        }
+
+        if (sql == null) {
+            notify("Compile succeeded but no compiled SQL file was found", NotificationType.WARNING)
+            return
+        }
+        CopyPasteManager.getInstance().setContents(StringSelection(sql))
+        notify(message, NotificationType.INFORMATION)
     }
 
     private fun notify(content: String, type: NotificationType) {
