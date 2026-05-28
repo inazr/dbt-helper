@@ -89,7 +89,6 @@ class DbtMainPanel(
         val modelId = service.findCurrentModelId(file) ?: return
         val node = service.getIndex().nodes[modelId] ?: return
         actionBar.setSelector(node.name)
-        actionBar.setFullRefreshAvailable(node.config["materialized"] == "incremental")
     }
 
     private fun driveLineage(selector: String) {

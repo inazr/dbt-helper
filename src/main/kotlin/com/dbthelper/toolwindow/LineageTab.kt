@@ -405,7 +405,6 @@ class LineageTab(private val project: Project, private val parentDisposable: Dis
             verb = DbtVerb.GENERATE_DOCS,
             selector = "",
             target = settings.state.activeTarget,
-            fullRefresh = false,
             previewLimit = 0
         )
         runner.run(spec, object : DbtCommandRunner.OutputListener {

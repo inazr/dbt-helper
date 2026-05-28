@@ -71,6 +71,21 @@ class ProfilesParser(private val project: Project) {
         }
     }
 
+    /** The dbt project's `name:` from dbt_project.yml (used for target/compiled/<name>/…). */
+    fun getProjectName(): String? {
+        return try {
+            val root = locator.findProjectRoot() ?: return null
+            val dbtProjectFile = root.findChild("dbt_project.yml") ?: return null
+            val yaml = Yaml()
+            @Suppress("UNCHECKED_CAST")
+            val data = dbtProjectFile.inputStream.use { yaml.load<Map<String, Any>>(it) }
+            data["name"] as? String
+        } catch (e: Exception) {
+            logger.warn("Failed to read project name from dbt_project.yml", e)
+            null
+        }
+    }
+
     fun getTargetNames(): List<String> = parse()?.targets?.keys?.toList() ?: emptyList()
 
     fun getDefaultTarget(): String? = parse()?.defaultTarget

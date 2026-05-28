@@ -2,11 +2,16 @@ package com.dbthelper.toolwindow
 
 import com.dbthelper.actions.DbtCommandBuilder
 import com.dbthelper.actions.DbtCommandSpec
+import com.dbthelper.actions.DbtFlagDiscovery
 import com.dbthelper.actions.DbtVerb
 import com.dbthelper.core.ProfilesParser
 import com.dbthelper.settings.DbtHelperSettings
 import com.dbthelper.settings.SettingsChangeListener
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.popup.JBPopupFactory
+import com.intellij.ui.CheckBoxList
+import com.intellij.ui.SimpleListCellRenderer
+import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextField
 import com.intellij.util.ui.JBUI
 import java.awt.BorderLayout
@@ -14,20 +19,17 @@ import java.awt.Dimension
 import java.awt.FlowLayout
 import javax.swing.Box
 import javax.swing.BoxLayout
-import javax.swing.ButtonGroup
 import javax.swing.JButton
-import javax.swing.JCheckBox
 import javax.swing.JComboBox
 import javax.swing.JLabel
 import javax.swing.JPanel
-import javax.swing.JToggleButton
 import javax.swing.event.DocumentEvent
 import javax.swing.event.DocumentListener
 
 /**
  * Shared settings/action bar shown above the Lineage and Runner tabs.
- * Row 1: selector field | read-only command preview.
- * Row 2: target combo, verb toggle group, full-refresh, Clear, GO.
+ * Row 1: selector field + extra-args field | read-only command preview.
+ * Row 2: target combo, verb combo, flags multi-select, Clear, GO.
  *
  * Holds no execution logic — it exposes callbacks the coordinator wires up.
  */
@@ -39,8 +41,16 @@ class DbtActionBar(private val project: Project) : JPanel(BorderLayout()) {
     var onClear: (() -> Unit)? = null
     var onSelectorChanged: ((String) -> Unit)? = null
 
+    private val flagDiscovery = DbtFlagDiscovery(project)
+
     private val selectorField = JBTextField().apply {
         emptyText.text = "dbt selector (e.g. my_model or 1+my_model+2)"
+        preferredSize = Dimension(220, preferredSize.height)
+    }
+    private val extraArgsField = JBTextField().apply {
+        emptyText.text = "--threads 8 --vars '{k: v}'"
+        toolTipText = "Extra dbt args, appended verbatim to the command"
+        preferredSize = Dimension(200, preferredSize.height)
     }
     private val commandPreview = JBTextField().apply {
         isEditable = false
@@ -52,41 +62,43 @@ class DbtActionBar(private val project: Project) : JPanel(BorderLayout()) {
         preferredSize = Dimension(120, preferredSize.height)
     }
 
-    private val verbButtons: Map<DbtVerb, JToggleButton> = DbtVerb.entries.associateWith {
-        JToggleButton(it.display)
+    private val verbCombo = JComboBox(DROPDOWN_VERBS.toTypedArray()).apply {
+        renderer = SimpleListCellRenderer.create("") { it.display }
+        toolTipText = "dbt command to run"
     }
-    private val verbGroup = ButtonGroup().apply { verbButtons.values.forEach { add(it) } }
 
-    private val fullRefreshCheckBox = JCheckBox("full-refresh").apply {
-        toolTipText = "Rebuild incremental models from scratch (--full-refresh)"
+    private val flagsButton = JButton(FLAGS_LABEL).apply {
+        toolTipText = "Toggle flags for the selected command"
     }
+    private val selectedFlags = LinkedHashSet<String>()
+    private var availableFlags: List<DbtFlagDiscovery.FlagOption> = emptyList()
+
     private val clearButton = JButton("Clear").apply { toolTipText = "Clear log output" }
     private val goButton = JButton("GO")
 
     private var running = false
     private var suppressSelectorEvents = false
-    private var fullRefreshAllowedForModel = false
 
     init {
         border = JBUI.Borders.empty(4)
 
-        // Row 1: "dbt Select:" label + selector | preview
-        val selectorPanel = JPanel(BorderLayout(4, 0)).apply {
-            add(JLabel("dbt Select:"), BorderLayout.WEST)
-            add(selectorField, BorderLayout.CENTER)
+        val selectorPanel = JPanel(FlowLayout(FlowLayout.LEFT, 4, 0)).apply {
+            add(JLabel("dbt Select:"))
+            add(selectorField)
+            add(JLabel("Extra args:"))
+            add(extraArgsField)
         }
         val row1 = JPanel(BorderLayout(8, 0)).apply {
             add(selectorPanel, BorderLayout.WEST)
             add(commandPreview, BorderLayout.CENTER)
         }
-        selectorField.preferredSize = Dimension(260, selectorField.preferredSize.height)
 
-        // Row 2: target + verbs + flags + actions
         val row2 = JPanel(FlowLayout(FlowLayout.LEFT, 4, 2)).apply {
             add(JLabel("Target:"))
             add(targetCombo)
-            verbButtons.values.forEach { add(it) }
-            add(fullRefreshCheckBox)
+            add(JLabel("Verb:"))
+            add(verbCombo)
+            add(flagsButton)
             add(Box.createHorizontalStrut(8))
             add(clearButton)
             add(goButton)
@@ -101,7 +113,7 @@ class DbtActionBar(private val project: Project) : JPanel(BorderLayout()) {
 
         initTargetCombo()
         initListeners()
-        verbButtons[DbtVerb.RUN]!!.isSelected = true
+        verbCombo.selectedItem = DbtVerb.RUN
         updateForVerb()
     }
 
@@ -111,7 +123,9 @@ class DbtActionBar(private val project: Project) : JPanel(BorderLayout()) {
         running = value
         goButton.text = if (value) "Stop" else "GO"
         selectorField.isEnabled = !value && selectedVerb().usesSelector
-        verbButtons.values.forEach { it.isEnabled = !value }
+        extraArgsField.isEnabled = !value
+        verbCombo.isEnabled = !value
+        flagsButton.isEnabled = !value && availableFlags.isNotEmpty()
         clearButton.isEnabled = !value
         if (!value) updateGoEnabled()
     }
@@ -129,12 +143,6 @@ class DbtActionBar(private val project: Project) : JPanel(BorderLayout()) {
         updateGoEnabled()
     }
 
-    /** Show/hide full-refresh based on whether the current model is incremental. */
-    fun setFullRefreshAvailable(incremental: Boolean) {
-        fullRefreshAllowedForModel = incremental
-        updateFullRefreshVisibility()
-    }
-
     fun refreshTargets() {
         val settings = DbtHelperSettings.getInstance(project)
         val profiles = ProfilesParser.getInstance(project)
@@ -147,6 +155,9 @@ class DbtActionBar(private val project: Project) : JPanel(BorderLayout()) {
         val restore = (current ?: settings.state.activeTarget).takeIf { targets.contains(it) }
         if (restore != null) targetCombo.selectedItem = restore
         addTargetListener(settings)
+        // dbt exe / target may have changed → discovered flags could differ
+        flagDiscovery.invalidate()
+        refreshFlagsForVerb()
     }
 
     // --- internals ---
@@ -183,18 +194,21 @@ class DbtActionBar(private val project: Project) : JPanel(BorderLayout()) {
             override fun removeUpdate(e: DocumentEvent?) = changed()
             override fun changedUpdate(e: DocumentEvent?) = changed()
         })
-        verbButtons.values.forEach { btn ->
-            btn.addActionListener { updateForVerb() }
-        }
-        fullRefreshCheckBox.addActionListener { updatePreview() }
+        extraArgsField.document.addDocumentListener(object : DocumentListener {
+            private fun changed() = updatePreview()
+            override fun insertUpdate(e: DocumentEvent?) = changed()
+            override fun removeUpdate(e: DocumentEvent?) = changed()
+            override fun changedUpdate(e: DocumentEvent?) = changed()
+        })
+        verbCombo.addActionListener { updateForVerb() }
+        flagsButton.addActionListener { showFlagsPopup() }
         clearButton.addActionListener { onClear?.invoke() }
         goButton.addActionListener {
             if (running) onStop?.invoke() else onGo?.invoke(currentSpec())
         }
     }
 
-    private fun selectedVerb(): DbtVerb =
-        verbButtons.entries.first { it.value.isSelected }.key
+    private fun selectedVerb(): DbtVerb = verbCombo.selectedItem as DbtVerb
 
     private fun currentSpec(): DbtCommandSpec {
         val settings = DbtHelperSettings.getInstance(project)
@@ -202,7 +216,8 @@ class DbtActionBar(private val project: Project) : JPanel(BorderLayout()) {
             verb = selectedVerb(),
             selector = selectorField.text.trim(),
             target = (targetCombo.selectedItem as? String).orEmpty(),
-            fullRefresh = fullRefreshCheckBox.isSelected && selectedVerb().supportsFullRefresh,
+            toggleFlags = selectedFlags.toList(),
+            extraArgs = extraArgsField.text.trim(),
             previewLimit = settings.state.previewRowLimit
         )
     }
@@ -210,18 +225,47 @@ class DbtActionBar(private val project: Project) : JPanel(BorderLayout()) {
     private fun updateForVerb() {
         val verb = selectedVerb()
         selectorField.isEnabled = !running && verb.usesSelector
-        updateFullRefreshVisibility()
+        refreshFlagsForVerb()
         updatePreview()
         updateGoEnabled()
     }
 
-    private fun updateFullRefreshVisibility() {
-        val verb = selectedVerb()
-        val visible = verb.supportsFullRefresh && fullRefreshAllowedForModel
-        fullRefreshCheckBox.isVisible = visible
-        if (!visible) fullRefreshCheckBox.isSelected = false
-        revalidate()
-        repaint()
+    /** Query discovery for the current verb (async) and repopulate the flags state. */
+    private fun refreshFlagsForVerb() {
+        flagsButton.isEnabled = false
+        flagsButton.text = "Flags …"
+        flagDiscovery.flagsForAsync(selectedVerb()) { opts ->
+            availableFlags = opts
+            // Drop any selected flag that this verb does not offer.
+            selectedFlags.retainAll(opts.map { it.token }.toSet())
+            flagsButton.isEnabled = !running && opts.isNotEmpty()
+            updateFlagsButtonText()
+            updatePreview()
+        }
+    }
+
+    private fun showFlagsPopup() {
+        if (availableFlags.isEmpty()) return
+        val list = CheckBoxList<DbtFlagDiscovery.FlagOption>()
+        availableFlags.forEach { opt ->
+            list.addItem(opt, opt.label, selectedFlags.contains(opt.token))
+        }
+        list.setCheckBoxListListener { index, value ->
+            val opt = list.getItemAt(index) ?: return@setCheckBoxListListener
+            if (value) selectedFlags.add(opt.token) else selectedFlags.remove(opt.token)
+            updateFlagsButtonText()
+            updatePreview()
+        }
+        JBPopupFactory.getInstance()
+            .createComponentPopupBuilder(JBScrollPane(list), list)
+            .setTitle("Flags")
+            .setRequestFocus(true)
+            .createPopup()
+            .showUnderneathOf(flagsButton)
+    }
+
+    private fun updateFlagsButtonText() {
+        flagsButton.text = if (selectedFlags.isEmpty()) FLAGS_LABEL else "Flags (${selectedFlags.size}) ▾"
     }
 
     private fun updatePreview() {
@@ -232,5 +276,12 @@ class DbtActionBar(private val project: Project) : JPanel(BorderLayout()) {
         if (running) { goButton.isEnabled = true; return }
         val verb = selectedVerb()
         goButton.isEnabled = !verb.usesSelector || selectorField.text.isNotBlank()
+    }
+
+    companion object {
+        private val DROPDOWN_VERBS = listOf(
+            DbtVerb.RUN, DbtVerb.BUILD, DbtVerb.TEST, DbtVerb.COMPILE, DbtVerb.PREVIEW
+        )
+        private const val FLAGS_LABEL = "Flags ▾"
     }
 }
