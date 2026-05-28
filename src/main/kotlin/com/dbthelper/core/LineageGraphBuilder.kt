@@ -3,7 +3,10 @@ package com.dbthelper.core
 import com.dbthelper.core.model.*
 import java.util.LinkedList
 
-class LineageGraphBuilder(private val index: ManifestIndex) {
+class LineageGraphBuilder(
+    private val index: ManifestIndex,
+    private val project: com.intellij.openapi.project.Project? = null
+) {
 
     fun build(
         currentNodeId: String,
@@ -114,10 +117,60 @@ class LineageGraphBuilder(private val index: ManifestIndex) {
         val nodeIds = lineageNodes.map { it.id }.toSet()
         val validEdges = edges.distinct().filter { it.fromNodeId in nodeIds && it.toNodeId in nodeIds } + stubEdges
 
+        // --- Long-jump stub insertion ---
+        val skipThreshold = project?.let {
+            com.dbthelper.settings.DbtHelperSettings.getInstance(it).state.maxLayerSkipBeforeStub
+        } ?: 3
+
+        val realEdges = validEdges.filter { e ->
+            !e.fromNodeId.startsWith("__stub_") && !e.toNodeId.startsWith("__stub_")
+        }
+        val layerMap = computeLayers(
+            realEdges.flatMap { listOf(it.fromNodeId, it.toNodeId) }.toSet(),
+            realEdges
+        )
+
+        val skipEdges = realEdges.filter { e ->
+            val fl = layerMap[e.fromNodeId] ?: return@filter false
+            val tl = layerMap[e.toNodeId] ?: return@filter false
+            (tl - fl) > skipThreshold
+        }
+
+        if (skipEdges.isEmpty()) {
+            return LineageGraph(
+                currentNodeId = currentNodeId,
+                nodes = lineageNodes,
+                edges = validEdges,
+                hiddenUpstreamCount = upstreamResult.hiddenCount,
+                hiddenDownstreamCount = downstreamResult.hiddenCount
+            )
+        }
+
+        val keptEdges = validEdges - skipEdges.toSet()
+        val newStubNodes = mutableListOf<LineageNode>()
+        val newStubEdges = mutableListOf<LineageEdge>()
+        for (e in skipEdges) {
+            val gap = (layerMap[e.toNodeId]!! - layerMap[e.fromNodeId]!! - 1)
+            val stubId = "__stub_skip_${e.fromNodeId}__to__${e.toNodeId}"
+            newStubNodes.add(LineageNode(
+                id = stubId,
+                name = "$gap hidden hops",
+                resourceType = "stub",
+                schema = null, database = null, materialization = null,
+                filePath = null, description = null, columns = emptyList(),
+                depth = 0,
+                isCurrent = false,
+                stubDirection = "skip",
+                boundaryNodeId = e.fromNodeId
+            ))
+            newStubEdges.add(LineageEdge(fromNodeId = e.fromNodeId, toNodeId = stubId))
+            newStubEdges.add(LineageEdge(fromNodeId = stubId, toNodeId = e.toNodeId))
+        }
+
         return LineageGraph(
             currentNodeId = currentNodeId,
-            nodes = lineageNodes,
-            edges = validEdges,
+            nodes = lineageNodes + newStubNodes,
+            edges = keptEdges + newStubEdges,
             hiddenUpstreamCount = upstreamResult.hiddenCount,
             hiddenDownstreamCount = downstreamResult.hiddenCount
         )
@@ -257,6 +310,36 @@ class LineageGraphBuilder(private val index: ManifestIndex) {
         }
 
         return null
+    }
+
+    /**
+     * Compute a layer index per node: root upstream nodes get 0; for others,
+     * layer = max(layer of upstream-neighbors) + 1.
+     */
+    private fun computeLayers(
+        nodeIds: Set<String>,
+        edges: List<LineageEdge>
+    ): Map<String, Int> {
+        val parents = nodeIds.associateWith { mutableListOf<String>() }
+        edges.forEach { e ->
+            if (e.fromNodeId in nodeIds && e.toNodeId in nodeIds) {
+                parents.getValue(e.toNodeId).add(e.fromNodeId)
+            }
+        }
+        val layer = mutableMapOf<String, Int>()
+        val resolving = mutableSetOf<String>()
+        fun resolve(id: String): Int {
+            layer[id]?.let { return it }
+            if (id in resolving) return 0 // cycle guard
+            resolving.add(id)
+            val ps = parents[id].orEmpty()
+            val v = if (ps.isEmpty()) 0 else (ps.maxOf { resolve(it) } + 1)
+            resolving.remove(id)
+            layer[id] = v
+            return v
+        }
+        nodeIds.forEach { resolve(it) }
+        return layer
     }
 
     private enum class Direction {

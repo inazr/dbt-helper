@@ -140,7 +140,8 @@ class LineageTab(private val project: Project, private val parentDisposable: Dis
                     }
                     "expandRequest" -> {
                         val boundaryNodeId = payload.path("boundaryNodeId").asText()
-                        handleExpandRequest(boundaryNodeId)
+                        val direction = payload.path("stubDirection").asText()
+                        handleExpandRequest(boundaryNodeId, direction)
                     }
                     "regenerateDocs" -> handleRegenerateDocs()
                 }
@@ -282,7 +283,7 @@ class LineageTab(private val project: Project, private val parentDisposable: Dis
                 if (index === ManifestIndex.EMPTY) return@executeOnPooledThread
 
                 val settings = DbtHelperSettings.getInstance(project)
-                val builder = LineageGraphBuilder(index)
+                val builder = LineageGraphBuilder(index, project)
                 val graph = builder.build(
                     currentNodeId = modelId,
                     upstreamDepth = selectorUpstreamDepth ?: settings.state.upstreamDepth,
@@ -436,7 +437,13 @@ class LineageTab(private val project: Project, private val parentDisposable: Dis
         }
     }
 
-    private fun handleExpandRequest(boundaryNodeId: String) {
+    private fun handleExpandRequest(boundaryNodeId: String, direction: String = "") {
+        if (direction == "skip") {
+            // TODO: for "skip" stubs, ideally refocus on the first hidden downstream node.
+            // For now, refocus on the boundary node so the user can navigate from there.
+            handleNodeClick(boundaryNodeId, "model")
+            return
+        }
         expandedBoundaryNodes.add(boundaryNodeId)
         refreshGraph()
     }

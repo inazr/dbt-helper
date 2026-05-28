@@ -32,6 +32,51 @@
         skipped: '#C9CED6'
     };
 
+    const ELK_LAYOUT_OPTIONS = {
+        'elk.algorithm': 'layered',
+        'elk.direction': 'RIGHT',
+        'elk.edgeRouting': 'ORTHOGONAL',
+        'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX',
+        'elk.layered.spacing.nodeNodeBetweenLayers': '80',
+        'elk.spacing.nodeNode': '40',
+        'elk.layered.crossingMinimization.semiInteractive': 'true',
+        'elk.hierarchyHandling': 'INCLUDE_CHILDREN'
+    };
+
+    function elkDirectionFor(layoutDir) {
+        return layoutDir === 'TB' ? 'DOWN' : 'RIGHT';
+    }
+
+    var layoutCache = (function () {
+        var MAX = 20;
+        var map = new Map();
+        function hash(key) {
+            var h = 0;
+            for (var i = 0; i < key.length; i++) { h = (h * 31 + key.charCodeAt(i)) | 0; }
+            return String(h);
+        }
+        return {
+            keyFor: function (currentNodeId, nodes, edges, clusterMode, expandedIds) {
+                var nIds = nodes.map(function (n) { return n.data.id + ':' + n.data.w + 'x' + n.data.h; }).sort().join('|');
+                var eIds = edges.map(function (e) { return e.data.id; }).sort().join('|');
+                var ex = (expandedIds || []).slice().sort().join(',');
+                return hash(currentNodeId + '##' + (clusterMode || '') + '##' + ex + '##' + nIds + '##' + eIds);
+            },
+            get: function (k) {
+                if (!map.has(k)) return null;
+                var v = map.get(k);
+                map.delete(k); map.set(k, v); // LRU bump
+                return v;
+            },
+            put: function (k, positions) {
+                if (map.has(k)) map.delete(k);
+                else if (map.size >= MAX) { map.delete(map.keys().next().value); }
+                map.set(k, positions);
+            },
+            clear: function () { map.clear(); }
+        };
+    })();
+
     function schemaColor(schema) {
         var h = 0;
         for (var i = 0; i < schema.length; i++) {
@@ -107,6 +152,30 @@
     });
     var pendingClickTimer = null;
     var lastClickedId = null;
+
+    var hoverActive = false;
+    function applyHoverHighlight(nodeId) {
+        if (!cy) return;
+        // Disable hover-highlight when other state is active.
+        if (lastClickedId === nodeId) return; // single-click neighborhood dim
+        var hasSearchDim = false;
+        cy.edges().some(function (e) {
+            if (e.hasClass('dimmed')) { hasSearchDim = true; return true; }
+            return false;
+        });
+        if (hasSearchDim) return;
+        var node = cy.getElementById(nodeId);
+        if (!node.length) return;
+        var incident = node.connectedEdges();
+        incident.addClass('hot');
+        cy.edges().not(incident).addClass('cold');
+        hoverActive = true;
+    }
+    function clearHoverHighlight() {
+        if (!cy || !hoverActive) return;
+        cy.edges().removeClass('hot').removeClass('cold');
+        hoverActive = false;
+    }
 
     function dimToNeighborhood(nodeId) {
         if (!cy) return;
@@ -243,6 +312,7 @@
             });
             card.addEventListener('mouseenter', function (e) {
                 if (activeDrag) return;
+                applyHoverHighlight(data.id);
                 showTooltip({ x: e.clientX, y: e.clientY }, data);
             });
             card.addEventListener('mousemove', function (e) {
@@ -250,6 +320,7 @@
                 moveTooltip({ x: e.clientX, y: e.clientY });
             });
             card.addEventListener('mouseleave', function () {
+                clearHoverHighlight();
                 hideTooltip();
             });
 
@@ -299,20 +370,11 @@
             cy.destroy();
         }
         lastCurrentNodeId = currentNodeId;
-        loadingEl.style.display = 'none';
 
         cy = cytoscape({
             container: document.getElementById('cy'),
             elements: elements,
-            layout: {
-                name: 'dagre',
-                rankDir: layoutDirection || 'LR',
-                nodeSep: 40,
-                rankSep: 80,
-                edgeSep: 20,
-                animate: false,
-                fit: false
-            },
+            layout: { name: 'preset', fit: false },
             style: [
                 {
                     selector: 'node',
@@ -326,23 +388,32 @@
                         'shape': 'round-rectangle'
                     }
                 },
-                (function () {
-                    var style = {
+                {
+                    selector: 'edge',
+                    style: {
                         'width': 1.5,
                         'line-color': '#999',
                         'target-arrow-color': '#999',
                         'target-arrow-shape': 'triangle',
                         'curve-style': edgeCurveStyle || 'bezier',
                         'arrow-scale': 0.8
-                    };
-                    var cs = edgeCurveStyle || 'bezier';
-                    if (cs === 'taxi' || cs === 'round-taxi') {
-                        style['taxi-turn'] = 'data(taxiTurn)';
-                        style['taxi-turn-min-distance'] = 0;
-                        style['taxi-direction'] = 'auto';
                     }
-                    return { selector: 'edge', style: style };
-                })(),
+                },
+                {
+                    selector: 'edge.hot',
+                    style: {
+                        'opacity': 1,
+                        'width': 2.5,
+                        'line-color': '#4E79A7',
+                        'target-arrow-color': '#4E79A7'
+                    }
+                },
+                {
+                    selector: 'edge.cold',
+                    style: {
+                        'opacity': 0.1
+                    }
+                },
                 {
                     selector: 'node.dimmed',
                     style: { 'opacity': 0.25 }
@@ -391,94 +462,126 @@
             moveTooltip(evt.renderedPosition);
         });
 
-        // Build HTML cards over cytoscape
-        buildNodeCards();
-        cy.on('pan zoom position layoutstop', syncNodeCards);
+        function finalizeLayout() {
+            loadingEl.style.display = 'none';
 
-        // Restore viewport or center on current node
-        if (isRerender && savedZoom && savedPan) {
-            cy.zoom(savedZoom);
-            cy.pan(savedPan);
-        } else {
-            // First render — fit graph, then center on current node
-            cy.fit(undefined, 30);
-            var currentNode = cy.getElementById(currentNodeId);
-            if (currentNode.length) {
-                cy.center(currentNode);
-            }
-        }
-
-        // Fade in new nodes and edges
-        if (isRerender && previousNodeIds.size > 0) {
-            cy.nodes().forEach(function (node) {
-                if (!previousNodeIds.has(node.id())) {
-                    node.style('opacity', 0);
-                    node.animate({ style: { opacity: 1 } }, { duration: 300, complete: function () {
-                        node.removeStyle('opacity');
-                    }});
-                }
-            });
-            cy.edges().forEach(function (edge) {
-                var srcNew = !previousNodeIds.has(edge.source().id());
-                var tgtNew = !previousNodeIds.has(edge.target().id());
-                if (srcNew || tgtNew) {
-                    edge.style('opacity', 0);
-                    edge.animate({ style: { opacity: 1 } }, { duration: 300, complete: function () {
-                        edge.removeStyle('opacity');
-                    }});
-                }
-            });
-        }
-
-        // Manual wheel/pinch zoom for JCEF trackpad compatibility
-        var cyContainer = document.getElementById('cy');
-
-        function applyZoom(factor, x, y) {
-            var zoom = cy.zoom() * factor;
-            zoom = Math.max(cy.minZoom(), Math.min(cy.maxZoom(), zoom));
-            cy.zoom({ level: zoom, renderedPosition: { x: x, y: y } });
-        }
-
-        // Wheel event — handles scroll and ctrl+scroll (pinch on some systems)
-        cyContainer.addEventListener('wheel', function (e) {
-            if (!cy) return;
-            e.preventDefault();
-            var delta = e.deltaY;
-            var sensitivity = e.ctrlKey ? 0.01 : 0.001;
-            applyZoom(1 - delta * sensitivity, e.offsetX, e.offsetY);
-        }, { passive: false });
-
-        // Zoom control buttons — 5% step
-        document.getElementById('zoom-in').addEventListener('click', function () {
-            if (!cy) return;
-            applyZoom(1.02, cy.width() / 2, cy.height() / 2);
-        });
-        document.getElementById('zoom-out').addEventListener('click', function () {
-            if (!cy) return;
-            applyZoom(1 / 1.02, cy.width() / 2, cy.height() / 2);
-        });
-        document.getElementById('zoom-fit').addEventListener('click', function () {
-            if (!cy) return;
-            cy.fit(undefined, 30);
-        });
-
-        // Keyboard zoom: +/- and =/- keys (skip when typing in search)
-        document.addEventListener('keydown', function (e) {
-            if (!cy) return;
-            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-            var cx = cy.width() / 2;
-            var cy2 = cy.height() / 2;
-            if (e.key === '+' || e.key === '=' || (e.key === '=' && e.metaKey)) {
-                e.preventDefault();
-                applyZoom(1.02, cx, cy2);
-            } else if (e.key === '-' || e.key === '_') {
-                e.preventDefault();
-                applyZoom(1 / 1.02, cx, cy2);
-            } else if (e.key === '0') {
-                e.preventDefault();
+            // Restore viewport or center on current node
+            if (isRerender && savedZoom && savedPan) {
+                cy.zoom(savedZoom);
+                cy.pan(savedPan);
+            } else {
+                // First render — fit graph, then center on current node
                 cy.fit(undefined, 30);
+                var currentNode = cy.getElementById(currentNodeId);
+                if (currentNode.length) {
+                    cy.center(currentNode);
+                }
             }
+
+            // Fade in new nodes and edges
+            if (isRerender && previousNodeIds.size > 0) {
+                cy.nodes().forEach(function (node) {
+                    if (!previousNodeIds.has(node.id())) {
+                        node.style('opacity', 0);
+                        node.animate({ style: { opacity: 1 } }, { duration: 300, complete: function () {
+                            node.removeStyle('opacity');
+                        }});
+                    }
+                });
+                cy.edges().forEach(function (edge) {
+                    var srcNew = !previousNodeIds.has(edge.source().id());
+                    var tgtNew = !previousNodeIds.has(edge.target().id());
+                    if (srcNew || tgtNew) {
+                        edge.style('opacity', 0);
+                        edge.animate({ style: { opacity: 1 } }, { duration: 300, complete: function () {
+                            edge.removeStyle('opacity');
+                        }});
+                    }
+                });
+            }
+
+            // Build HTML cards over cytoscape
+            buildNodeCards();
+            cy.on('pan zoom position layoutstop', syncNodeCards);
+
+            // Manual wheel/pinch zoom for JCEF trackpad compatibility
+            var cyContainer = document.getElementById('cy');
+
+            function applyZoom(factor, x, y) {
+                var zoom = cy.zoom() * factor;
+                zoom = Math.max(cy.minZoom(), Math.min(cy.maxZoom(), zoom));
+                cy.zoom({ level: zoom, renderedPosition: { x: x, y: y } });
+            }
+
+            // Wheel event — handles scroll and ctrl+scroll (pinch on some systems)
+            cyContainer.addEventListener('wheel', function (e) {
+                if (!cy) return;
+                e.preventDefault();
+                var delta = e.deltaY;
+                var sensitivity = e.ctrlKey ? 0.01 : 0.001;
+                applyZoom(1 - delta * sensitivity, e.offsetX, e.offsetY);
+            }, { passive: false });
+
+            // Zoom control buttons — 5% step
+            document.getElementById('zoom-in').addEventListener('click', function () {
+                if (!cy) return;
+                applyZoom(1.02, cy.width() / 2, cy.height() / 2);
+            });
+            document.getElementById('zoom-out').addEventListener('click', function () {
+                if (!cy) return;
+                applyZoom(1 / 1.02, cy.width() / 2, cy.height() / 2);
+            });
+            document.getElementById('zoom-fit').addEventListener('click', function () {
+                if (!cy) return;
+                cy.fit(undefined, 30);
+            });
+
+            // Keyboard zoom: +/- and =/- keys (skip when typing in search)
+            document.addEventListener('keydown', function (e) {
+                if (!cy) return;
+                if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+                var cx = cy.width() / 2;
+                var cy2 = cy.height() / 2;
+                if (e.key === '+' || e.key === '=' || (e.key === '=' && e.metaKey)) {
+                    e.preventDefault();
+                    applyZoom(1.02, cx, cy2);
+                } else if (e.key === '-' || e.key === '_') {
+                    e.preventDefault();
+                    applyZoom(1 / 1.02, cx, cy2);
+                } else if (e.key === '0') {
+                    e.preventDefault();
+                    cy.fit(undefined, 30);
+                }
+            });
+        }
+
+        var elkOpts = Object.assign({}, ELK_LAYOUT_OPTIONS, {
+            'elk.direction': elkDirectionFor(layoutDirection)
         });
+        var cacheKey = layoutCache.keyFor(
+            currentNodeId,
+            elements.filter(function (e) { return e.data && !e.data.source; }),
+            elements.filter(function (e) { return e.data && e.data.source; }),
+            null,
+            []
+        );
+        var cached = layoutCache.get(cacheKey);
+        if (cached) {
+            cy.nodes().forEach(function (n) {
+                var p = cached[n.id()];
+                if (p) n.position({ x: p.x, y: p.y });
+            });
+            finalizeLayout();
+        } else {
+            cy.layout({ name: 'elk', fit: false, elk: elkOpts, workerUrl: 'elk.worker.js' })
+                .run()
+                .promiseOn('layoutstop').then(function () {
+                    var pos = {};
+                    cy.nodes().forEach(function (n) { var p = n.position(); pos[n.id()] = { x: p.x, y: p.y }; });
+                    layoutCache.put(cacheKey, pos);
+                    finalizeLayout();
+                });
+        }
     }
 
 
@@ -552,6 +655,7 @@
     };
 
     window.renderGraph = function (jsonStr) {
+        layoutCache.clear();
         try {
             const graph = typeof jsonStr === 'string' ? JSON.parse(jsonStr) : jsonStr;
             currentColorMode = graph.nodeColorMode || 'resource';
@@ -585,41 +689,13 @@
                 });
             }
 
-            // Count siblings per source/target so we can offset taxi-turn per-edge
-            var sourceCounts = {};
-            var targetCounts = {};
-            for (const e of graph.edges) {
-                sourceCounts[e.fromNodeId] = (sourceCounts[e.fromNodeId] || 0) + 1;
-                targetCounts[e.toNodeId] = (targetCounts[e.toNodeId] || 0) + 1;
-            }
-            var sourceIdx = {};
-            var targetIdx = {};
-
             for (const edge of graph.edges) {
                 var isStub = edge.fromNodeId.indexOf('__stub_') === 0 || edge.toNodeId.indexOf('__stub_') === 0;
-
-                // Spread parallel edges by varying taxi-turn as a percentage of the rank span.
-                // Stays within [20%, 80%] so the bend never lands past either endpoint.
-                var sIdx = sourceIdx[edge.fromNodeId] = (sourceIdx[edge.fromNodeId] || 0) + 1;
-                var tIdx = targetIdx[edge.toNodeId] = (targetIdx[edge.toNodeId] || 0) + 1;
-                var sCount = sourceCounts[edge.fromNodeId];
-                var tCount = targetCounts[edge.toNodeId];
-
-                var turnPct = 50;
-                if (sCount > 1 || tCount > 1) {
-                    var fromSrc = sCount > 1 ? (sIdx / (sCount + 1)) : 0.5;
-                    var fromTgt = tCount > 1 ? (tIdx / (tCount + 1)) : 0.5;
-                    // Blend, weight source-spread more (bend originates there)
-                    var blend = (fromSrc * 0.7 + fromTgt * 0.3);
-                    turnPct = Math.round(20 + blend * 60); // 20..80
-                }
-
                 elements.push({
                     data: {
                         id: edge.fromNodeId + '->' + edge.toNodeId,
                         source: edge.fromNodeId,
-                        target: edge.toNodeId,
-                        taxiTurn: turnPct + '%'
+                        target: edge.toNodeId
                     },
                     classes: isStub ? 'stub-edge' : ''
                 });
