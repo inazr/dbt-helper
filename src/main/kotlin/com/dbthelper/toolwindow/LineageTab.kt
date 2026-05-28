@@ -290,6 +290,69 @@ class LineageTab(private val project: Project, private val parentDisposable: Dis
         refreshGraph()
     }
 
+    /**
+     * Refocus the lineage graph on [nodeId] without opening the file in the editor.
+     * Clears any selector depth overrides and expanded boundary nodes, then re-renders.
+     */
+    fun refocusOnNode(nodeId: String) {
+        if (isDisposed) return
+        if (nodeId == currentModelId) return
+        currentModelId = nodeId
+        expandedBoundaryNodes.clear()
+        selectorUpstreamDepth = null
+        selectorDownstreamDepth = null
+        refreshGraph()
+    }
+
+    /**
+     * Open the source file for [nodeId] in the editor.
+     * When [preferYaml] is true, prefer the node's patch_path (YAML schema file) if
+     * available; otherwise fall back to [originalFilePath] (the SQL file).
+     * The patch_path in the dbt manifest uses a "package://" prefix that is stripped.
+     */
+    fun openFileForNode(nodeId: String, preferYaml: Boolean) {
+        if (isDisposed) return
+        ApplicationManager.getApplication().invokeLater {
+            if (isDisposed) return@invokeLater
+            val service = ManifestService.getInstance(project)
+            val index = service.getIndex()
+            val locator = service.getLocator()
+            val dbtRoot = locator.findProjectRoot() ?: return@invokeLater
+
+            val sqlPath: String?
+            val yamlPath: String?
+
+            when {
+                index.sources.containsKey(nodeId) -> {
+                    val src = index.sources[nodeId]!!
+                    sqlPath = null
+                    yamlPath = src.originalFilePath
+                }
+                index.exposures.containsKey(nodeId) -> {
+                    val exp = index.exposures[nodeId]!!
+                    sqlPath = null
+                    yamlPath = exp.originalFilePath
+                }
+                else -> {
+                    val node = index.nodes[nodeId]
+                    sqlPath = node?.originalFilePath
+                    // patchPath is stored as "package://relative/path.yml" — strip prefix
+                    yamlPath = node?.patchPath?.let { pp ->
+                        val sepIdx = pp.indexOf("://")
+                        if (sepIdx >= 0) pp.substring(sepIdx + 3) else pp
+                    }
+                }
+            }
+
+            val relativePath = if (preferYaml && yamlPath != null) yamlPath else (sqlPath ?: yamlPath)
+                ?: return@invokeLater
+
+            val fullPath = "${dbtRoot.path}/$relativePath"
+            val vFile = LocalFileSystem.getInstance().findFileByPath(fullPath) ?: return@invokeLater
+            FileEditorManager.getInstance(project).openFile(vFile, true)
+        }
+    }
+
     fun refreshGraph() {
         val modelId = currentModelId ?: return
         if (!isPageReady || isDisposed) return
