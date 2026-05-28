@@ -73,6 +73,39 @@ class LineageGraphBuilder(
             lineageNodes = lineageNodes.filter { it.resourceType != "exposure" }.toMutableList()
         }
 
+        // Cluster nodes into compound parent groups based on the active cluster mode
+        val clusterMode = project?.let {
+            com.dbthelper.settings.DbtHelperSettings.getInstance(it).state.defaultClusterMode
+        } ?: "none"
+
+        if (clusterMode != "none") {
+            val parentNodesById = mutableMapOf<String, LineageNode>()
+            val withParents = lineageNodes.map { n ->
+                if (n.resourceType == "stub" || n.resourceType == "cluster") return@map n
+                val pid = parentIdFor(n, clusterMode)
+                if (pid == null) {
+                    n
+                } else {
+                    if (!parentNodesById.containsKey(pid)) {
+                        parentNodesById[pid] = LineageNode(
+                            id = pid,
+                            name = parentLabelFor(pid),
+                            resourceType = "cluster",
+                            schema = null, database = null, materialization = null,
+                            filePath = null, description = null, columns = emptyList(),
+                            depth = 0,
+                            isCurrent = false,
+                            isParent = true
+                        )
+                    }
+                    n.copy(parent = pid)
+                }
+            }.toMutableList()
+            withParents.addAll(0, parentNodesById.values.toList())
+            lineageNodes.clear()
+            lineageNodes.addAll(withParents)
+        }
+
         // Recalculate stub counts — exclude nodes already visible after expands
         val visibleNodeIds = visitedNodes.keys
         val stubEdges = mutableListOf<LineageEdge>()
@@ -376,6 +409,40 @@ class LineageGraphBuilder(
         }
         nodeIds.forEach { resolve(it) }
         return layer
+    }
+
+    private fun parentIdFor(node: LineageNode, mode: String): String? = when (mode) {
+        "schema" -> if (node.resourceType == "source") {
+            val srcGroup = node.name.substringBefore('.', missingDelimiterValue = "_")
+            "cluster_source_$srcGroup"
+        } else {
+            "cluster_schema_${node.schema ?: "_"}"
+        }
+        "folder" -> {
+            val path = node.filePath?.replace('\\', '/')?.removePrefix("models/")
+            val seg = path?.substringBefore('/', missingDelimiterValue = "")
+            if (seg.isNullOrBlank()) null else "cluster_folder_$seg"
+        }
+        "tag" -> {
+            // Check manifest index for tags, fall back to searchHints
+            val tags = index.nodes[node.id]?.tags?.map { it.lowercase() }
+                ?: index.sources[node.id]?.tags?.map { it.lowercase() }
+                ?: node.searchHints?.tagsLower?.toList().orEmpty()
+            when {
+                tags.isEmpty() -> "cluster_tag_<no-tag>"
+                tags.size > 1 -> "cluster_tag_<multiple-tags>"
+                else -> "cluster_tag_${tags[0]}"
+            }
+        }
+        else -> null
+    }
+
+    private fun parentLabelFor(parentId: String): String = when {
+        parentId.startsWith("cluster_schema_") -> parentId.removePrefix("cluster_schema_")
+        parentId.startsWith("cluster_source_") -> "source: " + parentId.removePrefix("cluster_source_")
+        parentId.startsWith("cluster_folder_") -> parentId.removePrefix("cluster_folder_")
+        parentId.startsWith("cluster_tag_")    -> parentId.removePrefix("cluster_tag_")
+        else -> ""
     }
 
     private enum class Direction {

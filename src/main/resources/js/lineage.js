@@ -391,6 +391,8 @@
 
         cy.nodes().forEach(function (node) {
             var data = node.data();
+            if (data.isParent) return;
+
             var card = document.createElement('div');
             card.className = 'card-node';
             card.dataset.id = data.id;
@@ -585,6 +587,22 @@
                         'width': 'data(w)',
                         'height': 'data(h)',
                         'shape': 'round-rectangle'
+                    }
+                },
+                {
+                    selector: 'node[?isParent]',
+                    style: {
+                        'background-opacity': 0.04,
+                        'border-width': 1,
+                        'border-color': '#888',
+                        'border-opacity': 0.4,
+                        'shape': 'round-rectangle',
+                        'label': 'data(name)',
+                        'text-valign': 'top',
+                        'text-halign': 'left',
+                        'font-size': 11,
+                        'color': '#888',
+                        'padding': 16
                     }
                 },
                 {
@@ -939,6 +957,18 @@
             const elements = [];
 
             for (const node of graph.nodes) {
+                if (node.isParent) {
+                    elements.push({
+                        data: {
+                            id: node.id,
+                            name: node.name,
+                            isParent: true,
+                            resourceType: 'cluster'
+                        }
+                    });
+                    continue;
+                }
+
                 var name = node.name;
                 var w = CARD_WIDTH;
                 var h = (node.resourceType === 'stub') ? STUB_HEIGHT : cardHeightFor(node);
@@ -961,6 +991,7 @@
                         columns: node.columns || [],
                         iconKey: pickIconKey(node),
                         barColor: pickBarColor(node, graph.nodeColorMode),
+                        parent: node.parent || undefined,
                         w: w,
                         h: h
                     }
