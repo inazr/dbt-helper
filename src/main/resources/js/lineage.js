@@ -47,6 +47,20 @@
         return layoutDir === 'TB' ? 'DOWN' : 'RIGHT';
     }
 
+    var KNOWN_PREFIXES = new Set(['col', 'tag', 'mat', 'schema', 'type', 'pkg']);
+
+    function tokenize(query) {
+        if (!query || !query.trim()) return [];
+        return query.trim().split(/\s+/).map(function (raw) {
+            var colon = raw.indexOf(':');
+            if (colon <= 0 || colon === raw.length - 1) return { kind: 'bare', value: raw };
+            var key = raw.substring(0, colon).toLowerCase();
+            var value = raw.substring(colon + 1);
+            if (KNOWN_PREFIXES.has(key)) return { kind: key, value: value.toLowerCase() };
+            return { kind: 'bare', value: raw };
+        });
+    }
+
     var layoutCache = (function () {
         var MAX = 20;
         var map = new Map();
@@ -137,6 +151,7 @@
     let currentLayoutDir = 'LR';
     let previousNodeIds = new Set();
     let nodeCards = {};
+    var nodeSearchHints = {};
     let currentColorMode = 'resource';
     let nodeStatus = {}; // uniqueId -> status string (see STATUS_BAR_COLORS keys)
     var nodeFailures = {}; // uniqueId -> failure count (integer)
@@ -949,6 +964,11 @@
                 });
             }
 
+            nodeSearchHints = {};
+            for (const node of graph.nodes) {
+                if (node.searchHints) nodeSearchHints[node.id] = node.searchHints;
+            }
+
             for (const edge of graph.edges) {
                 var isStub = edge.fromNodeId.indexOf('__stub_') === 0 || edge.toNodeId.indexOf('__stub_') === 0;
                 elements.push({
@@ -978,17 +998,54 @@
         }
     };
 
+    function matchesQuery(nodeId, tokens) {
+        if (!tokens.length) return true;
+        var h = nodeSearchHints[nodeId];
+        if (!h) return false;
+
+        var bareTokens = [];
+        var byKind = {};
+        tokens.forEach(function (t) {
+            if (t.kind === 'bare') bareTokens.push(t.value.toLowerCase());
+            else { byKind[t.kind] = byKind[t.kind] || []; byKind[t.kind].push(t.value); }
+        });
+
+        // bare tokens AND across; each must match name or id
+        for (var i = 0; i < bareTokens.length; i++) {
+            var v = bareTokens[i];
+            if ((h.lowerName || '').indexOf(v) < 0 && (h.lowerId || '').indexOf(v) < 0) return false;
+        }
+        // for each prefix kind, ANY token in that kind must match (OR within kind, AND across kinds)
+        for (var key in byKind) {
+            var vals = byKind[key];
+            var anyHit = vals.some(function (v) { return matchKind(h, key, v); });
+            if (!anyHit) return false;
+        }
+        return true;
+    }
+
+    function matchKind(h, kind, value) {
+        switch (kind) {
+            case 'col':    return (h.columnNamesLower || []).some(function (c) { return c.indexOf(value) >= 0; });
+            case 'tag':    return (h.tagsLower || []).indexOf(value) >= 0;
+            case 'schema': return (h.schemaLower || '').indexOf(value) >= 0;
+            case 'mat':    return (h.materialization || '') === value;
+            case 'type':   return (h.resourceType || '') === value;
+            case 'pkg':    return (h.packageLower || '').indexOf(value) >= 0;
+            default:       return false;
+        }
+    }
+
     window.filterNodes = function (query) {
         if (!cy) return;
         if (!query || query.trim() === '') {
             resetFilter();
             return;
         }
-        const q = query.toLowerCase();
+        var tokens = tokenize(query);
+
         cy.nodes().forEach(function (node) {
-            var name = (node.data('name') || '').toLowerCase();
-            var id = (node.data('id') || '').toLowerCase();
-            var match = name.includes(q) || id.includes(q);
+            var match = matchesQuery(node.id(), tokens);
             if (match) {
                 node.removeClass('dimmed');
                 var c = nodeCards[node.id()]; if (c) c.classList.remove('dimmed');
@@ -998,14 +1055,13 @@
             }
         });
         cy.edges().forEach(function (edge) {
-            const src = edge.source();
-            const tgt = edge.target();
-            if (src.hasClass('dimmed') && tgt.hasClass('dimmed')) {
-                edge.addClass('dimmed');
-            } else {
-                edge.removeClass('dimmed');
-            }
+            var src = edge.source();
+            var tgt = edge.target();
+            if (src.hasClass('dimmed') && tgt.hasClass('dimmed')) edge.addClass('dimmed');
+            else edge.removeClass('dimmed');
         });
+
+        // Task 6 will add: maybeShowCatalogMissingToast(tokens);
     };
 
     window.resetFilter = function () {
