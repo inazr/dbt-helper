@@ -28,7 +28,8 @@ data class LineageNode(
     val boundaryNodeId: String? = null,
     val searchHints: com.dbthelper.core.SearchHints? = null,
     val parent: String? = null,
-    val isParent: Boolean = false
+    val isParent: Boolean = false,
+    val freshness: com.dbthelper.core.SourceFreshness? = null,
 )
 
 data class ColumnNode(

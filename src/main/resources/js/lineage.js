@@ -434,6 +434,17 @@
                     schema.textContent = data.schema;
                     text.appendChild(schema);
                 }
+                if (data.resourceType === 'source' && data.freshness && data.freshness.status !== 'pass') {
+                    var fresh = document.createElement('div');
+                    fresh.className = 'card-freshness fresh-' + data.freshness.status;
+                    fresh.textContent = data.freshness.status === 'error' ? '⬤' : '●';
+                    fresh.title = 'Freshness: ' + data.freshness.status + (data.freshness.message ? ' — ' + data.freshness.message : '');
+                    fresh.addEventListener('click', function (e) {
+                        e.stopPropagation();
+                        sendToKotlin('openFreshnessDetail', { nodeId: data.id });
+                    });
+                    text.appendChild(fresh);
+                }
                 mainRow.appendChild(text);
 
                 var badge = document.createElement('div');

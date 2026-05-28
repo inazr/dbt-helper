@@ -6,7 +6,8 @@ import java.util.LinkedList
 class LineageGraphBuilder(
     private val index: ManifestIndex,
     private val project: com.intellij.openapi.project.Project? = null,
-    private val catalogAvailable: Boolean = false
+    private val catalogAvailable: Boolean = false,
+    private val freshnessByUniqueId: Map<String, com.dbthelper.core.SourceFreshness> = emptyMap()
 ) {
 
     fun build(
@@ -346,7 +347,8 @@ class LineageGraphBuilder(
                 },
                 depth = depth,
                 isCurrent = isCurrent,
-                searchHints = hints
+                searchHints = hints,
+                freshness = freshnessByUniqueId[id]
             )
         }
 
