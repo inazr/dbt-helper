@@ -697,7 +697,9 @@
         });
 
         function finalizeLayout() {
-            loadingEl.style.display = 'none';
+            // Keep the overlay visible when there are no nodes, so an empty-selection
+            // "No nodes match" hint set via showGraphMessage isn't erased on layout-complete.
+            if (cy.nodes().length > 0) loadingEl.style.display = 'none';
 
             // Restore viewport or center on current node
             if (isRerender && savedZoom && savedPan) {
