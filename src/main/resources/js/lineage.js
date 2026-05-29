@@ -1032,10 +1032,21 @@
                 });
             }
 
+            var _loadingEl = document.getElementById('loading');
+            if (_loadingEl && elements.length > 0) { _loadingEl.style.display = 'none'; }
             initCytoscape(elements, graph.currentNodeId, graph.edgeCurveStyle, graph.layoutDirection);
         } catch (e) {
             console.error('renderGraph error:', e);
         }
+    };
+
+    // Show a centered message in the graph area by reusing the loading overlay.
+    // Called by LineageTab when a selection resolves to zero nodes.
+    window.showGraphMessage = function (msg) {
+        var el = document.getElementById('loading');
+        if (!el) return;
+        el.textContent = msg;
+        el.style.display = '';
     };
 
     window.highlightNode = function (nodeId) {
