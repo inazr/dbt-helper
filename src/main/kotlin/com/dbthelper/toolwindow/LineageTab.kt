@@ -364,6 +364,8 @@ class LineageTab(
      * clears single-model depth overrides and boundary expansions, then renders
      * via [LineageGraphBuilder.buildForSelection]. An empty set renders an empty
      * graph (with the "no nodes match" hint shown by refreshGraph).
+     * The set is a frozen snapshot — it is NOT re-resolved on manifest reload, so
+     * membership reflects the moment the selector was last typed/entered.
      */
     fun focusSelection(ids: Set<String>) {
         if (isDisposed) return

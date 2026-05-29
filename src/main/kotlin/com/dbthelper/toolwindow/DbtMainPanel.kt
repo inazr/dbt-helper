@@ -43,7 +43,7 @@ class DbtMainPanel(
     private val lineageTab = LineageTab(project, this, actionBar)
     private val runnerTab = DbtRunnerTab(project, this)
     private val selectionResolver = com.dbthelper.core.DbtSelectionResolver(project)
-    @Volatile private var enterGeneration = 0
+    @Volatile private var lineageGeneration = 0
 
     @Volatile private var currentProcess: Process? = null
     @Volatile private var isRunning = false
@@ -101,6 +101,7 @@ class DbtMainPanel(
     }
 
     private fun driveLineage(selector: String) {
+        lineageGeneration++
         // Single-model selectors keep their padded focus behavior.
         val focus = DbtSelectorParser.parse(selector)
         if (focus != null) {
@@ -123,9 +124,9 @@ class DbtMainPanel(
     private fun resolveViaCliAndFocus(selector: String) {
         if (selector.isBlank()) return
         if (DbtSelectorParser.parse(selector) != null) return
-        val generation = ++enterGeneration
+        val generation = lineageGeneration
         selectionResolver.resolveViaCli(selector) { ids ->
-            if (generation == enterGeneration) lineageTab.focusSelection(ids)
+            if (generation == lineageGeneration) lineageTab.focusSelection(ids)
         }
     }
 
