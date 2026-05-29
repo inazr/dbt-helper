@@ -257,6 +257,8 @@ class LineageGraphBuilder(
             }
         }
 
+        // Selection cards all sit at depth 0, so boundary stubs use a fixed +/-1
+        // (the BFS-depth convention in build() doesn't apply to a flat selection set).
         for (id in visibleIds) {
             val hiddenUp = index.getUpstream(id).count { it !in visibleIds }
             if (hiddenUp > 0) {

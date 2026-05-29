@@ -67,6 +67,14 @@ class LineageGraphBuilderTest {
     }
 
     @Test
+    fun `selection of only nonexistent ids yields an empty graph`() {
+        val g = builder.buildForSelection(setOf("model.proj.ghost", "model.proj.missing"))
+        assertTrue(g.nodes.isEmpty())
+        assertTrue(g.edges.isEmpty())
+        assertEquals("", g.currentNodeId)
+    }
+
+    @Test
     fun `expanding a boundary reveals its hidden neighbor`() {
         // Expand around c -> its downstream d becomes visible (no more downstream stub on c).
         val g = builder.buildForSelection(setOf("model.proj.b", "model.proj.c"), setOf("model.proj.c"))
