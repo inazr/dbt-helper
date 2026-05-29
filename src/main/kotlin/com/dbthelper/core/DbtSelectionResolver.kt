@@ -34,8 +34,8 @@ class DbtSelectionResolver(private val project: Project?) {
         return result
     }
 
-    private val lead = Regex("^(\\d*)\\+")
-    private val trail = Regex("\\+(\\d*)$")
+    private val upstreamOpRegex = Regex("^(\\d*)\\+")
+    private val downstreamOpRegex = Regex("\\+(\\d*)$")
 
     /** Strip +/N+ operators, resolve the inner method/name, then expand by operators. */
     private fun resolveToken(index: ManifestIndex, token: String): Set<String>? {
@@ -44,17 +44,17 @@ class DbtSelectionResolver(private val project: Project?) {
         var down = 0
         var hasOp = false
 
-        lead.find(s)?.let { m ->
+        upstreamOpRegex.find(s)?.let { m ->
             up = m.groupValues[1].toIntOrNull() ?: DbtSelectorParser.UNLIMITED
             s = s.substring(m.value.length)
             hasOp = true
         }
-        trail.find(s)?.let { m ->
+        downstreamOpRegex.find(s)?.let { m ->
             down = m.groupValues[1].toIntOrNull() ?: DbtSelectorParser.UNLIMITED
             s = s.substring(0, s.length - m.value.length)
             hasOp = true
         }
-        if (s.isEmpty()) return null
+        if (s.isEmpty()) return null // bare "+" / empty token (e.g. user mid-type) — let caller fall through
 
         val base = resolveMethod(index, s) ?: return null
         if (!hasOp) return base
@@ -74,6 +74,7 @@ class DbtSelectionResolver(private val project: Project?) {
             val method = s.substring(0, colon)
             val value = s.substring(colon + 1)
             if (value.isEmpty()) return null
+            // Note: a "+" inside a method value is treated as part of the value, not an operator.
             return when (method) {
                 "tag" -> byTag(index, value)
                 "source" -> bySource(index, value)
@@ -120,7 +121,7 @@ class DbtSelectionResolver(private val project: Project?) {
     private fun byFqn(index: ManifestIndex, value: String): Set<String> {
         val rx = globToRegex(value)
         return index.nodes.values
-            .filter { n -> rx.matches(n.fqn.joinToString(".")) || n.fqn.any { rx.matches(it) } }
+            .filter { n -> n.fqn.isNotEmpty() && (rx.matches(n.fqn.joinToString(".")) || rx.matches(n.fqn.last())) }
             .map { it.uniqueId }
             .toSet()
     }

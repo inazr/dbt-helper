@@ -80,6 +80,15 @@ class DbtSelectionResolverTest {
     }
 
     @Test
+    fun `upstream operator expands the matched set`() {
+        // "2+c" = c plus 2 upstream hops -> {c, b, a}
+        assertEquals(
+            setOf("model.proj.a", "model.proj.b", "model.proj.c"),
+            resolver.resolveLive(index(), "2+c")
+        )
+    }
+
+    @Test
     fun `space separated tokens union`() {
         assertEquals(
             setOf("model.proj.a", "model.proj.c"),
