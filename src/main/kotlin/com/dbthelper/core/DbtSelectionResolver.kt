@@ -5,6 +5,7 @@ import com.dbthelper.core.model.ManifestIndex
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.KotlinModule
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import java.io.File
@@ -33,10 +34,12 @@ class DbtSelectionResolver(private val project: Project?) {
      */
     fun resolveViaCli(selector: String, onResult: (Set<String>) -> Unit) {
         val proj = project ?: return
-        val dbt = DbtCommandRunner(proj).findDbtExecutable()
-        val root = DbtProjectLocator(proj).findProjectRoot()?.path ?: return
         Thread {
             try {
+                val dbt = DbtCommandRunner(proj).findDbtExecutable()
+                val root = ReadAction.compute<String?, RuntimeException> {
+                    DbtProjectLocator(proj).findProjectRoot()?.path
+                } ?: return@Thread
                 val pb = ProcessBuilder(
                     dbt, "ls", "--quiet",
                     "--select", selector,
