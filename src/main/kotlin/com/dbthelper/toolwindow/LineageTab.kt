@@ -67,6 +67,12 @@ class LineageTab(
     @Volatile
     private var selectorDownstreamDepth: Int? = null
 
+    // Non-null when the graph is driven by a resolved selection SET (tag:/path:/…),
+    // as opposed to a single focused model. Cleared when focus returns to a single
+    // node (file change, node click, refocus, or a single-model selector).
+    @Volatile
+    private var selectionIds: Set<String>? = null
+
     // Expanded boundary nodes (not persisted to settings)
     private val expandedBoundaryNodes = mutableSetOf<String>()
 
@@ -316,6 +322,7 @@ class LineageTab(
             } ?: false
 
             if (!currentIsInSameFile) {
+                selectionIds = null
                 currentModelId = modelId
                 expandedBoundaryNodes.clear()
                 selectorUpstreamDepth = null
@@ -338,9 +345,11 @@ class LineageTab(
     fun focusModel(modelName: String, upstreamDepth: Int? = null, downstreamDepth: Int? = null) {
         if (isDisposed) return
         val modelId = ManifestService.getInstance(project).findModelIdByName(modelName) ?: return
+        val wasSelection = selectionIds != null
+        selectionIds = null
         val modelChanged = modelId != currentModelId
         val depthChanged = upstreamDepth != selectorUpstreamDepth || downstreamDepth != selectorDownstreamDepth
-        if (!modelChanged && !depthChanged) return
+        if (!wasSelection && !modelChanged && !depthChanged) return
         if (modelChanged) {
             currentModelId = modelId
             expandedBoundaryNodes.clear()
@@ -351,12 +360,29 @@ class LineageTab(
     }
 
     /**
+     * Drive the graph from an already-resolved selection set. Stores the set,
+     * clears single-model depth overrides and boundary expansions, then renders
+     * via [LineageGraphBuilder.buildForSelection]. An empty set renders an empty
+     * graph (with the "no nodes match" hint shown by refreshGraph).
+     */
+    fun focusSelection(ids: Set<String>) {
+        if (isDisposed) return
+        selectionIds = ids
+        expandedBoundaryNodes.clear()
+        selectorUpstreamDepth = null
+        selectorDownstreamDepth = null
+        currentModelId = ids.firstOrNull() ?: currentModelId
+        refreshGraph()
+    }
+
+    /**
      * Refocus the lineage graph on [nodeId] without opening the file in the editor.
      * Clears any selector depth overrides and expanded boundary nodes, then re-renders.
      */
     fun refocusOnNode(nodeId: String) {
         if (isDisposed) return
         if (nodeId == currentModelId) return
+        selectionIds = null
         currentModelId = nodeId
         expandedBoundaryNodes.clear()
         selectorUpstreamDepth = null
@@ -414,10 +440,9 @@ class LineageTab(
     }
 
     fun refreshGraph() {
-        val modelId = currentModelId ?: return
         if (!isPageReady || isDisposed) return
+        val selection = selectionIds
 
-        // Build graph off-EDT, then send to browser on EDT
         ApplicationManager.getApplication().executeOnPooledThread {
             try {
                 if (isDisposed) return@executeOnPooledThread
@@ -433,13 +458,19 @@ class LineageTab(
                 }
                 val freshness = sourcesFile?.let { SourcesFreshnessParser().parseFile(it) } ?: emptyMap()
                 val builder = LineageGraphBuilder(index, project, catalogAvailable, freshness)
-                val graph = builder.build(
-                    currentNodeId = modelId,
-                    upstreamDepth = selectorUpstreamDepth ?: settings.state.upstreamDepth,
-                    downstreamDepth = selectorDownstreamDepth ?: settings.state.downstreamDepth,
-                    showExposures = settings.state.showExposures,
-                    expandedBoundaryNodes = expandedBoundaryNodes
-                ).copy(
+
+                val graph = if (selection != null) {
+                    builder.buildForSelection(selection, expandedBoundaryNodes)
+                } else {
+                    val modelId = currentModelId ?: return@executeOnPooledThread
+                    builder.build(
+                        currentNodeId = modelId,
+                        upstreamDepth = selectorUpstreamDepth ?: settings.state.upstreamDepth,
+                        downstreamDepth = selectorDownstreamDepth ?: settings.state.downstreamDepth,
+                        showExposures = settings.state.showExposures,
+                        expandedBoundaryNodes = expandedBoundaryNodes
+                    )
+                }.copy(
                     edgeCurveStyle = settings.state.edgeCurveStyle,
                     layoutDirection = settings.state.layoutDirection,
                     nodeColorMode = settings.state.nodeColorMode
@@ -457,15 +488,20 @@ class LineageTab(
                 val escaped = escapeJsJson(graphJson)
 
                 ApplicationManager.getApplication().invokeLater {
-                    if (!isDisposed) executeJs("renderGraph('$escaped')")
+                    if (isDisposed) return@invokeLater
+                    executeJs("renderGraph('$escaped')")
+                    if (selection != null && graph.nodes.none { it.resourceType != "stub" }) {
+                        executeJs("showGraphMessage('No nodes match the selector')")
+                    }
                 }
             } catch (e: Exception) {
                 logger.warn("Error building lineage graph", e)
             }
         }
 
-        // Update sidebar to reflect current model
-        pushDocsToSidebar(modelId)
+        // Update sidebar to reflect the representative model.
+        val sidebarId = selection?.firstOrNull() ?: currentModelId
+        if (sidebarId != null) pushDocsToSidebar(sidebarId)
     }
 
     private fun applyCurrentTheme() {
@@ -548,6 +584,7 @@ class LineageTab(
     private fun handleNodeClick(nodeId: String, resourceType: String) {
         // Focus lineage on clicked node directly (don't wait for file open event)
         if (nodeId != currentModelId) {
+            selectionIds = null
             currentModelId = nodeId
             expandedBoundaryNodes.clear()
             selectorUpstreamDepth = null
