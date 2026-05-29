@@ -109,9 +109,8 @@ class DbtMainPanel(
         isRunning = true
         DbtRunState.getInstance(project).setRunning(true)
         actionBar.setRunning(true)
-        tabs.selectedComponent = runnerTab
         runnerTab.clear()
-        if (spec.verb in statusVerbs) lineageTab.beginRunStatus()
+        if (spec.verb in statusVerbs) lineageTab.beginRunStatus(spec.selector)
 
         val runner = DbtCommandRunner(project)
         runner.run(spec, object : DbtCommandRunner.OutputListener {

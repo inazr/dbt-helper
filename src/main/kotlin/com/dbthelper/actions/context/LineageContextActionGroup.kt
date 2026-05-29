@@ -25,7 +25,7 @@ object LineageContextActionGroup {
         val joined = names.joinToString(" ")
 
         if (allBuildable) {
-            val goGroup = DefaultActionGroup("Go$multiSuffix", true)
+            val goGroup = DefaultActionGroup("[RUN]$multiSuffix", true)
             goGroup.add(GoSelectorAction(actionBar, joined, joined))
             goGroup.add(GoSelectorAction(actionBar, plus(joined, up = true, down = false), plus(joined, up = true, down = false)))
             goGroup.add(GoSelectorAction(actionBar, plus(joined, up = false, down = true), plus(joined, up = false, down = true)))

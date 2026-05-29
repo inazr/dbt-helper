@@ -51,7 +51,7 @@
         html, body { width: 100%; height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; }
         body { background: var(--bg-color); color: var(--text-color); }
         #cy { width: 100%; height: 100%; }
-        #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #888; font-size: 14px; }
+        #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: var(--loading-color); font-size: 14px; }
 
         .tooltip {
             position: absolute;
@@ -242,9 +242,8 @@
             text-overflow: ellipsis;
         }
         .card-node.selected {
-            background: var(--card-selected-bg);
-            border-color: var(--card-selected-border);
-            box-shadow: 0 0 0 1px var(--card-selected-border) inset;
+            border-color: var(--card-bar-color, var(--card-selected-border));
+            box-shadow: 0 0 0 1px var(--card-bar-color, var(--card-selected-border)) inset;
         }
         .card-node.dimmed { opacity: 0.3; }
         .card-node.stub {
@@ -647,6 +646,41 @@
             cursor: pointer;
         }
         .toolbar-select:hover { background: var(--btn-hover); }
+        .custom-select {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 6px;
+            min-width: 70px;
+            user-select: none;
+        }
+        .custom-select-arrow { font-size: 9px; line-height: 1; }
+        .custom-select-menu {
+            display: none;
+            position: absolute;
+            top: calc(100% + 2px);
+            left: 0;
+            min-width: 100%;
+            background: var(--btn-bg);
+            border: 1px solid var(--btn-border);
+            border-radius: 4px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+            z-index: 300;
+        }
+        .custom-select-menu.open { display: block; }
+        .custom-select-option {
+            padding: 4px 8px;
+            font-size: 11px;
+            white-space: nowrap;
+            cursor: pointer;
+        }
+        .custom-select-option:hover { background: var(--btn-hover); }
+        .custom-select-option.selected {
+            background: var(--card-selected-bg);
+            color: var(--btn-text);
+        }
         .card-freshness {
             display: inline-block;
             margin-left: 6px;
@@ -672,12 +706,19 @@
     <div id="run-results-hint" class="run-results-hint" style="display: none"></div>
     <div id="controls">
         <label class="toolbar-label">Group:</label>
-        <select id="cluster-mode" class="toolbar-select">
-            <option value="none">None</option>
-            <option value="schema">Schema</option>
-            <option value="folder">Folder</option>
-            <option value="tag">Tag</option>
-        </select>
+        <!-- Custom dropdown, not a native <select>: JCEF's off-screen renderer
+             mis-positions native popups (opening upward, off-screen). This menu
+             lives in the page DOM so it always opens downward, under the control. -->
+        <div id="cluster-mode" class="toolbar-select custom-select" tabindex="0">
+            <span id="cluster-mode-label">None</span>
+            <span class="custom-select-arrow">▾</span>
+            <div id="cluster-mode-menu" class="custom-select-menu">
+                <div class="custom-select-option" data-value="none">None</div>
+                <div class="custom-select-option" data-value="schema">Schema</div>
+                <div class="custom-select-option" data-value="folder">Folder</div>
+                <div class="custom-select-option" data-value="tag">Tag</div>
+            </div>
+        </div>
         <button id="regenerate-docs" title="Regenerate dbt docs&#10;Runs `dbt docs generate` to refresh target/catalog.json — populates column types, descriptions, and metadata used by the cards, hover tooltips, and column search.">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" style="width:14px;height:14px;">
                 <path d="M2.5 8a5.5 5.5 0 0 1 9.6-3.7"/>

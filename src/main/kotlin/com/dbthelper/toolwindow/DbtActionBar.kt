@@ -17,8 +17,6 @@ import com.intellij.util.ui.JBUI
 import java.awt.BorderLayout
 import java.awt.Dimension
 import java.awt.FlowLayout
-import javax.swing.Box
-import javax.swing.BoxLayout
 import javax.swing.JButton
 import javax.swing.JComboBox
 import javax.swing.JLabel
@@ -27,9 +25,12 @@ import javax.swing.event.DocumentEvent
 import javax.swing.event.DocumentListener
 
 /**
- * Shared settings/action bar shown above the Lineage and Runner tabs.
- * Row 1: selector field + extra-args field | read-only command preview.
- * Row 2: target combo, verb combo, flags multi-select, Clear, GO.
+ * Shared settings/action bar shown above the Lineage and Runner tabs. Always
+ * visible — it is part of the tool window content, not the auto-hiding header.
+ *
+ * Two rows:
+ *  1. target combo · verb combo · flags · extra-args | Clear · [RUN]
+ *  2. selector field | read-only command preview
  *
  * Holds no execution logic — it exposes callbacks the coordinator wires up.
  */
@@ -45,7 +46,7 @@ class DbtActionBar(private val project: Project) : JPanel(BorderLayout()) {
 
     private val selectorField = JBTextField().apply {
         emptyText.text = "dbt selector (e.g. my_model or 1+my_model+2)"
-        preferredSize = Dimension(220, preferredSize.height)
+        preferredSize = Dimension(360, preferredSize.height)
     }
     private val extraArgsField = JBTextField().apply {
         emptyText.text = "--threads 8 --vars '{k: v}'"
@@ -54,7 +55,7 @@ class DbtActionBar(private val project: Project) : JPanel(BorderLayout()) {
     }
     private val commandPreview = JBTextField().apply {
         isEditable = false
-        toolTipText = "The exact dbt command GO will run"
+        toolTipText = "The exact dbt command [RUN] will run"
     }
 
     private val targetCombo = JComboBox<String>().apply {
@@ -74,7 +75,7 @@ class DbtActionBar(private val project: Project) : JPanel(BorderLayout()) {
     private var availableFlags: List<DbtFlagDiscovery.FlagOption> = emptyList()
 
     private val clearButton = JButton("Clear").apply { toolTipText = "Clear log output" }
-    private val goButton = JButton("GO")
+    private val goButton = JButton("[RUN]")
 
     private var running = false
     private var suppressSelectorEvents = false
@@ -82,34 +83,41 @@ class DbtActionBar(private val project: Project) : JPanel(BorderLayout()) {
     init {
         border = JBUI.Borders.empty(4)
 
-        val selectorPanel = JPanel(FlowLayout(FlowLayout.LEFT, 4, 0)).apply {
-            add(JLabel("dbt Select:"))
-            add(selectorField)
-            add(JLabel("Extra args:"))
-            add(extraArgsField)
-        }
-        val row1 = JPanel(BorderLayout(8, 0)).apply {
-            add(selectorPanel, BorderLayout.WEST)
-            add(commandPreview, BorderLayout.CENTER)
-        }
-
-        val row2 = JPanel(FlowLayout(FlowLayout.LEFT, 4, 2)).apply {
+        // Row 1: the run controls (previously hidden in the auto-hiding tool window
+        // header). Left = configuration, right = the action buttons.
+        val controlsLeft = JPanel(FlowLayout(FlowLayout.LEFT, 4, 0)).apply {
             add(JLabel("Target:"))
             add(targetCombo)
             add(JLabel("Verb:"))
             add(verbCombo)
             add(flagsButton)
-            add(Box.createHorizontalStrut(8))
+            add(JLabel("Extra args:"))
+            add(extraArgsField)
+        }
+        val controlsRight = JPanel(FlowLayout(FlowLayout.RIGHT, 4, 0)).apply {
             add(clearButton)
             add(goButton)
         }
-
-        val stack = JPanel().apply {
-            layout = BoxLayout(this, BoxLayout.Y_AXIS)
-            add(row1)
-            add(row2)
+        val controlsRow = JPanel(BorderLayout()).apply {
+            add(controlsLeft, BorderLayout.WEST)
+            add(controlsRight, BorderLayout.EAST)
         }
-        add(stack, BorderLayout.CENTER)
+
+        // Row 2: selector field + read-only command preview.
+        val selectorPanel = JPanel(FlowLayout(FlowLayout.LEFT, 4, 0)).apply {
+            add(JLabel("dbt Select:"))
+            add(selectorField)
+        }
+        val selectorRow = JPanel(BorderLayout(8, 0)).apply {
+            add(selectorPanel, BorderLayout.WEST)
+            add(commandPreview, BorderLayout.CENTER)
+        }
+
+        val rows = JPanel(BorderLayout(0, 4)).apply {
+            add(controlsRow, BorderLayout.NORTH)
+            add(selectorRow, BorderLayout.CENTER)
+        }
+        add(rows, BorderLayout.CENTER)
 
         initTargetCombo()
         initListeners()
@@ -121,7 +129,7 @@ class DbtActionBar(private val project: Project) : JPanel(BorderLayout()) {
 
     fun setRunning(value: Boolean) {
         running = value
-        goButton.text = if (value) "Stop" else "GO"
+        goButton.text = if (value) "Stop" else "[RUN]"
         selectorField.isEnabled = !value && selectedVerb().usesSelector
         extraArgsField.isEnabled = !value
         verbCombo.isEnabled = !value
@@ -148,7 +156,7 @@ class DbtActionBar(private val project: Project) : JPanel(BorderLayout()) {
     fun currentTarget(): String = (targetCombo.selectedItem as? String).orEmpty()
 
     /**
-     * Pre-fill the selector field with [selector] and trigger GO using the
+     * Pre-fill the selector field with [selector] and trigger [RUN] using the
      * currently configured verb, target, flags, and extra-args. No-op if a run
      * is already in progress (caller should use [promptToCancelAndRetry]).
      */

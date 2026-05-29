@@ -158,6 +158,7 @@
     var nodeFailureMessages = {}; // uniqueId -> failure message string
     var selectedIds = new Set();
     let activeDrag = null;
+    var themeEdgeColor = null; // last themed edge color, re-applied on every render
 
     var expandedIds = new Set();
 
@@ -664,6 +665,12 @@
             zoomingEnabled: true,
             userZoomingEnabled: false
         });
+
+        // Cytoscape edge colors are imperative (can't read CSS vars), so re-apply the
+        // themed color here — the stylesheet default only covers first paint pre-theme.
+        if (themeEdgeColor) {
+            cy.edges().style({ 'line-color': themeEdgeColor, 'target-arrow-color': themeEdgeColor });
+        }
 
         // Node click
         cy.on('tap', 'node', function (evt) {
@@ -1498,43 +1505,23 @@
         if (toggleBtn) toggleBtn.classList.add('active');
     };
 
-    window.applyTheme = function (isDark) {
-        var root = document.documentElement;
-        document.body.classList.toggle('theme-light', !isDark);
-        if (isDark) {
-            root.style.setProperty('--bg-color', '#1e1e1e');
-            root.style.setProperty('--text-color', '#ccc');
-            root.style.setProperty('--tooltip-bg', '#2d2d2d');
-            root.style.setProperty('--tooltip-border', '#555');
-            root.style.setProperty('--tooltip-text', '#ddd');
-            root.style.setProperty('--tooltip-name', '#fff');
-            root.style.setProperty('--tooltip-detail', '#aaa');
-            root.style.setProperty('--btn-bg', '#2d2d2d');
-            root.style.setProperty('--btn-border', '#555');
-            root.style.setProperty('--btn-text', '#ccc');
-            root.style.setProperty('--btn-hover', '#3d3d3d');
-            root.style.setProperty('--edge-color', '#555');
-            root.style.setProperty('--loading-color', '#888');
-        } else {
-            root.style.setProperty('--bg-color', '#f5f5f5');
-            root.style.setProperty('--text-color', '#333');
-            root.style.setProperty('--tooltip-bg', '#fff');
-            root.style.setProperty('--tooltip-border', '#ccc');
-            root.style.setProperty('--tooltip-text', '#333');
-            root.style.setProperty('--tooltip-name', '#111');
-            root.style.setProperty('--tooltip-detail', '#666');
-            root.style.setProperty('--btn-bg', '#fff');
-            root.style.setProperty('--btn-border', '#ccc');
-            root.style.setProperty('--btn-text', '#333');
-            root.style.setProperty('--btn-hover', '#e8e8e8');
-            root.style.setProperty('--edge-color', '#999');
-            root.style.setProperty('--loading-color', '#666');
-        }
-        // Update edge colors in cytoscape if graph exists
-        if (cy) {
-            var edgeColor = isDark ? '#555' : '#999';
-            cy.edges().style({ 'line-color': edgeColor, 'target-arrow-color': edgeColor });
-        }
+    // Apply a palette resolved from the live IDE theme (see LineageTab.buildThemeVars).
+    // Payload: { isDark: bool, vars: { '--css-var': '#rrggbb', ... } }.
+    window.applyThemeColors = function (jsonStr) {
+        try {
+            var data = typeof jsonStr === 'string' ? JSON.parse(jsonStr) : jsonStr;
+            var root = document.documentElement;
+            document.body.classList.toggle('theme-light', !data.isDark);
+            Object.keys(data.vars).forEach(function (k) {
+                root.style.setProperty(k, data.vars[k]);
+            });
+            // Cytoscape edges are styled imperatively, not via CSS vars — remember the
+            // color so every render re-applies it, and push it to the live graph now.
+            themeEdgeColor = data.vars['--edge-color'] || themeEdgeColor;
+            if (cy && themeEdgeColor) {
+                cy.edges().style({ 'line-color': themeEdgeColor, 'target-arrow-color': themeEdgeColor });
+            }
+        } catch (e) { console.error('applyThemeColors error:', e); }
     };
 
     // === Bridge to Kotlin ===
@@ -1546,15 +1533,46 @@
         }
     }
 
-    // Cluster mode dropdown
-    var clusterModeSelect = document.getElementById('cluster-mode');
-    if (clusterModeSelect) {
-        clusterModeSelect.addEventListener('change', function () {
-            sendToKotlin('clusterModeChanged', { mode: clusterModeSelect.value });
+    // Cluster mode dropdown — custom (not a native <select>), because JCEF's
+    // off-screen renderer mis-positions native popups (they open upward, off-screen).
+    var clusterMode = document.getElementById('cluster-mode');
+    var clusterMenu = document.getElementById('cluster-mode-menu');
+    var clusterLabel = document.getElementById('cluster-mode-label');
+    var clusterValue = 'none';
+
+    function refreshClusterMode() {
+        var options = clusterMenu.querySelectorAll('.custom-select-option');
+        options.forEach(function (opt) {
+            var selected = opt.getAttribute('data-value') === clusterValue;
+            opt.classList.toggle('selected', selected);
+            if (selected) clusterLabel.textContent = opt.textContent;
         });
     }
+
+    if (clusterMode) {
+        clusterMode.addEventListener('click', function (e) {
+            e.stopPropagation();
+            clusterMenu.classList.toggle('open');
+        });
+        clusterMenu.addEventListener('click', function (e) {
+            var opt = e.target.closest('.custom-select-option');
+            if (!opt) return;
+            // Don't let this bubble to the #cluster-mode toggle handler, which would
+            // re-open the menu we're about to close.
+            e.stopPropagation();
+            clusterValue = opt.getAttribute('data-value');
+            refreshClusterMode();
+            clusterMenu.classList.remove('open');
+            sendToKotlin('clusterModeChanged', { mode: clusterValue });
+        });
+        document.addEventListener('click', function () {
+            clusterMenu.classList.remove('open');
+        });
+        refreshClusterMode();
+    }
     window.setClusterMode = function (mode) {
-        if (clusterModeSelect) clusterModeSelect.value = mode;
+        clusterValue = mode || 'none';
+        refreshClusterMode();
     };
 
     // Search input

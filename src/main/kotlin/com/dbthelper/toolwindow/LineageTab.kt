@@ -5,6 +5,7 @@ import com.dbthelper.actions.DbtCommandSpec
 import com.dbthelper.actions.DbtRunStatusParser
 import com.dbthelper.actions.DbtVerb
 import com.dbthelper.actions.RunResultsReconciler
+import com.dbthelper.core.DbtSelectorParser
 import com.dbthelper.core.DocsPayloadBuilder
 import com.dbthelper.core.FreshnessDetailBuilder
 import com.dbthelper.core.LineageGraphBuilder
@@ -70,7 +71,7 @@ class LineageTab(
     private val expandedBoundaryNodes = mutableSetOf<String>()
 
     // Buildable node ids (model/seed/snapshot) of the most recently rendered graph;
-    // used to seed "queued" at GO. Updated on every refreshGraph().
+    // used as a fallback to seed "queued" at [RUN]. Updated on every refreshGraph().
     @Volatile
     private var lastBuildableNodeIds: List<String> = emptyList()
 
@@ -79,7 +80,7 @@ class LineageTab(
     @Volatile
     private var lastVisibleNodeIds: Set<String> = emptySet()
 
-    // Relation-key -> uniqueId lookup, built once at GO and cleared at run end.
+    // Relation-key -> uniqueId lookup, built once at [RUN] and cleared at run end.
     @Volatile
     private var runRelationKeyIndex: Map<String, String>? = null
 
@@ -469,10 +470,80 @@ class LineageTab(
 
     private fun applyCurrentTheme() {
         if (!isPageReady || isDisposed) return
-        val bg = UIManager.getColor("Panel.background")
-        val isDark = bg != null && (bg.red + bg.green + bg.blue) / 3 < 128
-        executeJs("applyTheme($isDark)")
+        val payload = escapeJsJson(mapper.writeValueAsString(buildThemeVars()))
+        executeJs("applyThemeColors('$payload')")
     }
+
+    /**
+     * Resolve the webview's CSS palette from the live IDE theme so the graph blends
+     * with whatever Look-and-Feel is configured (e.g. a dark-blue theme), instead of
+     * the old two hard-coded black/white palettes. Only two keys are read directly —
+     * `Panel.background` and `Label.foreground`, which every L&F provides — and the
+     * remaining surfaces/borders/muted text are derived from them by lightening,
+     * darkening, or blending so the result can never break on a missing theme key.
+     * Semantic node colors (status/resource bars) are deliberately not themed.
+     */
+    private fun buildThemeVars(): Map<String, Any> {
+        val bg = UIManager.getColor("Panel.background") ?: java.awt.Color(0x1e, 0x1e, 0x1e)
+        val fg = UIManager.getColor("Label.foreground") ?: java.awt.Color(0xcc, 0xcc, 0xcc)
+        val isDark = luminance(bg) < 0.5
+        val dir = if (isDark) 1.0 else -1.0
+        val accent = UIManager.getColor("Component.focusColor")
+            ?: UIManager.getColor("Link.activeForeground")
+            ?: java.awt.Color(0x21, 0x96, 0xF3)
+
+        val cardBg = shift(bg, 0.06 * dir)
+        val cardBorder = shift(bg, 0.20 * dir)
+        val cardIconBg = shift(bg, -0.03 * dir)
+        val muted = blend(fg, bg, 0.45)
+        val edge = blend(fg, bg, 0.62)
+
+        return mapOf(
+            "isDark" to isDark,
+            "vars" to mapOf(
+                "--bg-color" to hex(bg),
+                "--text-color" to hex(fg),
+                "--card-name" to hex(fg),
+                "--card-schema" to hex(muted),
+                "--card-bg" to hex(cardBg),
+                "--card-border" to hex(cardBorder),
+                "--card-icon-bg" to hex(cardIconBg),
+                "--card-icon-fg" to hex(muted),
+                "--card-selected-border" to hex(accent),
+                "--card-selected-bg" to hex(cardBg),
+                "--tooltip-bg" to hex(cardBg),
+                "--tooltip-border" to hex(cardBorder),
+                "--tooltip-text" to hex(fg),
+                "--tooltip-name" to hex(fg),
+                "--tooltip-detail" to hex(muted),
+                "--btn-bg" to hex(cardBg),
+                "--btn-border" to hex(cardBorder),
+                "--btn-text" to hex(fg),
+                "--btn-hover" to hex(shift(cardBg, 0.08 * dir)),
+                "--edge-color" to hex(edge),
+                "--loading-color" to hex(muted),
+                "--stub-bg" to hex(shift(bg, 0.03 * dir)),
+                "--stub-border" to hex(cardBorder),
+                "--stub-text" to hex(muted)
+            )
+        )
+    }
+
+    private fun luminance(c: java.awt.Color): Double =
+        (0.299 * c.red + 0.587 * c.green + 0.114 * c.blue) / 255.0
+
+    /** Lighten ([amount] > 0, toward white) or darken ([amount] < 0, toward black) [c]. */
+    private fun shift(c: java.awt.Color, amount: Double): java.awt.Color =
+        if (amount >= 0) blend(java.awt.Color.WHITE, c, amount) else blend(java.awt.Color.BLACK, c, -amount)
+
+    /** Linear interpolation: [t] of [a] mixed with (1-[t]) of [b]. */
+    private fun blend(a: java.awt.Color, b: java.awt.Color, t: Double): java.awt.Color {
+        val tt = t.coerceIn(0.0, 1.0)
+        fun mix(x: Int, y: Int) = Math.round(x * tt + y * (1 - tt)).toInt().coerceIn(0, 255)
+        return java.awt.Color(mix(a.red, b.red), mix(a.green, b.green), mix(a.blue, b.blue))
+    }
+
+    private fun hex(c: java.awt.Color): String = "#%06x".format(0xFFFFFF and c.rgb)
 
     private fun handleNodeClick(nodeId: String, resourceType: String) {
         // Focus lineage on clicked node directly (don't wait for file open event)
@@ -649,18 +720,75 @@ class LineageTab(
         popup.component.show(browser.component, clientX, clientY)
     }
 
-    /** Called at GO: build the relation index and seed targeted nodes as queued (without clearing unrelated statuses). */
-    fun beginRunStatus() {
+    /**
+     * Called at [RUN]: build the relation index and seed as queued exactly the nodes
+     * that `dbt build --select <selector>` will build (without clearing unrelated
+     * statuses). Falls back to the rendered graph's buildable nodes when [selector]
+     * is outside the graph-operator grammar we can resolve.
+     */
+    fun beginRunStatus(selector: String) {
         if (isDisposed) return
         ApplicationManager.getApplication().executeOnPooledThread {
             if (isDisposed) return@executeOnPooledThread
-            runRelationKeyIndex = buildRelationKeyIndex(ManifestService.getInstance(project).getIndex())
-            val targetedIds = lastBuildableNodeIds
+            val index = ManifestService.getInstance(project).getIndex()
+            runRelationKeyIndex = buildRelationKeyIndex(index)
+            val targetedIds = resolveSelectorPathIds(index, selector) ?: lastBuildableNodeIds
             val idsJson = escapeJsJson(mapper.writeValueAsString(targetedIds))
             ApplicationManager.getApplication().invokeLater {
                 if (isDisposed) return@invokeLater
                 if (targetedIds.isNotEmpty()) executeJs("seedQueuedStatuses('$idsJson')")
             }
+        }
+    }
+
+    /**
+     * Resolve the buildable node ids that [selector] actually targets, so the queue
+     * highlights exactly what `dbt build --select <selector>` builds — not the wider
+     * context the graph pads around the focused model.
+     *
+     * Each whitespace-separated token is parsed as a graph-operator selector; a bare
+     * name (no `+`) targets only that node (depth 0/0), matching dbt — unlike the graph
+     * view, which expands bare names to the configured display depth. Returns null if
+     * any token falls outside the grammar (wildcards, `tag:`, …) so the caller can fall
+     * back to the rendered graph's buildable nodes rather than guess.
+     */
+    private fun resolveSelectorPathIds(index: ManifestIndex, selector: String): List<String>? {
+        val tokens = selector.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+        if (tokens.isEmpty()) return null
+        val result = LinkedHashSet<String>()
+        for (token in tokens) {
+            val focus = DbtSelectorParser.parse(token) ?: return null
+            val startId = index.nodes.entries.firstOrNull {
+                it.value.name == focus.modelName &&
+                    it.value.resourceType in RunResultsReconciler.BUILDABLE_TYPES
+            }?.key ?: continue
+            result += startId
+            collectReachable(index, startId, focus.upstreamDepth ?: 0, upstream = true, into = result)
+            collectReachable(index, startId, focus.downstreamDepth ?: 0, upstream = false, into = result)
+        }
+        return result.filter { index.nodes[it]?.resourceType in RunResultsReconciler.BUILDABLE_TYPES }
+    }
+
+    /** BFS from [startId] up to [depth] levels along parents (upstream) or children, collecting ids into [into]. */
+    private fun collectReachable(
+        index: ManifestIndex,
+        startId: String,
+        depth: Int,
+        upstream: Boolean,
+        into: MutableSet<String>
+    ) {
+        if (depth <= 0) return
+        val visited = hashSetOf(startId)
+        var frontier = listOf(startId)
+        var remaining = depth
+        while (remaining > 0 && frontier.isNotEmpty()) {
+            val next = ArrayList<String>()
+            for (id in frontier) {
+                val neighbours = if (upstream) index.getUpstream(id) else index.getDownstream(id)
+                for (n in neighbours) if (visited.add(n)) { into.add(n); next += n }
+            }
+            frontier = next
+            remaining--
         }
     }
 
