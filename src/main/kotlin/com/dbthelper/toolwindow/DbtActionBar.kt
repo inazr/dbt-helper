@@ -41,6 +41,7 @@ class DbtActionBar(private val project: Project) : JPanel(BorderLayout()) {
     var onStop: (() -> Unit)? = null
     var onClear: (() -> Unit)? = null
     var onSelectorChanged: ((String) -> Unit)? = null
+    var onSelectorEnter: ((String) -> Unit)? = null
 
     private val flagDiscovery = DbtFlagDiscovery(project)
 
@@ -251,6 +252,12 @@ class DbtActionBar(private val project: Project) : JPanel(BorderLayout()) {
             override fun removeUpdate(e: DocumentEvent?) = changed()
             override fun changedUpdate(e: DocumentEvent?) = changed()
         })
+        // Enter in the selector field triggers the authoritative dbt ls resolution.
+        selectorField.addActionListener {
+            if (!suppressSelectorEvents && !running) {
+                onSelectorEnter?.invoke(selectorField.text.trim())
+            }
+        }
         extraArgsField.document.addDocumentListener(object : DocumentListener {
             private fun changed() = updatePreview()
             override fun insertUpdate(e: DocumentEvent?) = changed()

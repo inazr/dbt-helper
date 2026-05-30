@@ -213,6 +213,85 @@ class LineageGraphBuilder(
         )
     }
 
+    /**
+     * Render a faithful view of an already-resolved selection set: every id in
+     * [selectedIds] becomes a full card marked isCurrent, edges between selected
+     * nodes are drawn, and every connection to a node OUTSIDE the set collapses
+     * into the same "+ N more" boundary stub the normal view uses. No display-depth
+     * padding — the full cards are exactly the selection (graph operators were
+     * already applied during resolution).
+     *
+     * [expandedBoundaryNodes] holds boundary ids the user clicked to expand; each
+     * one's immediate hidden neighbors (both directions) are pulled into view, and
+     * stubs are recomputed against the enlarged visible set.
+     */
+    fun buildForSelection(
+        selectedIds: Set<String>,
+        expandedBoundaryNodes: Set<String> = emptySet()
+    ): LineageGraph {
+        fun exists(id: String) =
+            index.nodes.containsKey(id) || index.sources.containsKey(id) || index.exposures.containsKey(id)
+
+        val matched = selectedIds.filter { exists(it) }.toMutableSet()
+        if (matched.isEmpty()) {
+            return LineageGraph(currentNodeId = "", nodes = emptyList(), edges = emptyList(),
+                catalogAvailable = catalogAvailable)
+        }
+
+        // Reveal hidden neighbors of expanded boundaries (1 hop each click; clicks accumulate).
+        val visible = LinkedHashSet(matched)
+        for (b in expandedBoundaryNodes) {
+            if (!exists(b)) continue
+            (index.getUpstream(b) + index.getDownstream(b)).filter { exists(it) }.forEach { visible += it }
+        }
+
+        val nodes = visible.mapNotNull { toLineageNode(it, depth = 0, isCurrent = it in matched) }
+            .filter { it.resourceType != "test" }
+            .toMutableList()
+        val visibleIds = nodes.map { it.id }.toSet()
+
+        val edges = mutableListOf<LineageEdge>()
+        for (id in visibleIds) {
+            for (child in index.getDownstream(id)) {
+                if (child in visibleIds) edges.add(LineageEdge(fromNodeId = id, toNodeId = child))
+            }
+        }
+
+        // Selection cards all sit at depth 0, so boundary stubs use a fixed +/-1
+        // (the BFS-depth convention in build() doesn't apply to a flat selection set).
+        for (id in visibleIds) {
+            val hiddenUp = index.getUpstream(id).count { it !in visibleIds }
+            if (hiddenUp > 0) {
+                val stubId = "__stub_upstream_$id"
+                nodes.add(LineageNode(
+                    id = stubId, name = "+ $hiddenUp more", resourceType = "stub",
+                    schema = null, database = null, materialization = null, filePath = null,
+                    description = null, columns = emptyList(), depth = -1, isCurrent = false,
+                    stubDirection = "upstream", boundaryNodeId = id
+                ))
+                edges.add(LineageEdge(fromNodeId = stubId, toNodeId = id))
+            }
+            val hiddenDown = index.getDownstream(id).count { it !in visibleIds }
+            if (hiddenDown > 0) {
+                val stubId = "__stub_downstream_$id"
+                nodes.add(LineageNode(
+                    id = stubId, name = "+ $hiddenDown more", resourceType = "stub",
+                    schema = null, database = null, materialization = null, filePath = null,
+                    description = null, columns = emptyList(), depth = 1, isCurrent = false,
+                    stubDirection = "downstream", boundaryNodeId = id
+                ))
+                edges.add(LineageEdge(fromNodeId = id, toNodeId = stubId))
+            }
+        }
+
+        return LineageGraph(
+            currentNodeId = matched.first(),
+            nodes = nodes,
+            edges = edges,
+            catalogAvailable = catalogAvailable
+        )
+    }
+
     data class BfsResult(val hiddenCount: Int, val boundaryHiddenCounts: Map<String, Int>)
 
     private fun bfs(

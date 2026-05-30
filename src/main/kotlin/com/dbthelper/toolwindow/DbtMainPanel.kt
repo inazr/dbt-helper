@@ -42,6 +42,8 @@ class DbtMainPanel(
     private val tabs = JBTabbedPane()
     private val lineageTab = LineageTab(project, this, actionBar)
     private val runnerTab = DbtRunnerTab(project, this)
+    private val selectionResolver = com.dbthelper.core.DbtSelectionResolver(project)
+    @Volatile private var lineageGeneration = 0
 
     @Volatile private var currentProcess: Process? = null
     @Volatile private var isRunning = false
@@ -63,6 +65,7 @@ class DbtMainPanel(
         actionBar.onStop = { stopCommand() }
         actionBar.onClear = { runnerTab.clear() }
         actionBar.onSelectorChanged = { sel -> driveLineage(sel) }
+        actionBar.onSelectorEnter = { sel -> resolveViaCliAndFocus(sel) }
 
         val connection = project.messageBus.connect(this)
         connection.subscribe(CurrentModelListener.TOPIC, object : CurrentModelListener {
@@ -98,8 +101,33 @@ class DbtMainPanel(
     }
 
     private fun driveLineage(selector: String) {
-        val focus = DbtSelectorParser.parse(selector) ?: return
-        lineageTab.focusModel(focus.modelName, focus.upstreamDepth, focus.downstreamDepth)
+        lineageGeneration++
+        // Single-model selectors keep their padded focus behavior.
+        val focus = DbtSelectorParser.parse(selector)
+        if (focus != null) {
+            lineageTab.focusModel(focus.modelName, focus.upstreamDepth, focus.downstreamDepth)
+            return
+        }
+        // Set-based selectors: live in-process resolution. Null = syntax we don't
+        // handle live → leave the graph as-is until Enter triggers the CLI path.
+        val index = ManifestService.getInstance(project).getIndex()
+        val ids = selectionResolver.resolveLive(index, selector) ?: return
+        lineageTab.focusSelection(ids)
+    }
+
+    /**
+     * Authoritative refine triggered by Enter: resolve via dbt ls in the background
+     * and focus the result. Skips single-model selectors (the live path is already
+     * exact for those). Guarded by a generation counter so a stale result from a
+     * superseded selector is dropped.
+     */
+    private fun resolveViaCliAndFocus(selector: String) {
+        if (selector.isBlank()) return
+        if (DbtSelectorParser.parse(selector) != null) return
+        val generation = lineageGeneration
+        selectionResolver.resolveViaCli(selector) { ids ->
+            if (generation == lineageGeneration) lineageTab.focusSelection(ids)
+        }
     }
 
     private fun startCommand(spec: DbtCommandSpec) {
