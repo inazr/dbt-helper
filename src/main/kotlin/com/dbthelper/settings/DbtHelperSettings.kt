@@ -27,7 +27,7 @@ class DbtHelperSettings : PersistentStateComponent<DbtHelperSettings.State> {
         var autoParseOnSave: Boolean = true,
         var autoParseOnCloudCli: Boolean = false,
         // How lineage node bar colors are derived: "resource" | "schema" | "status".
-        var nodeColorMode: String = "resource",
+        var nodeColorMode: String = "status",
         // Edges spanning more than this many layers are replaced with an inline stub node.
         var maxLayerSkipBeforeStub: Int = 3,
         // Whether to show the red failure-count badge on lineage cards.
@@ -60,11 +60,17 @@ class DbtHelperSettings : PersistentStateComponent<DbtHelperSettings.State> {
             if (myState.upstreamDepth == 5) myState.upstreamDepth = 2
             if (myState.downstreamDepth == 5) myState.downstreamDepth = 1
         }
+        if (myState.configVersion < 2) {
+            // v2: default node color mode changed from "resource" to "status" so run
+            // progress is visible by default. Flip users still on the old default;
+            // a deliberate "schema" choice is preserved.
+            if (myState.nodeColorMode == "resource") myState.nodeColorMode = "status"
+        }
         myState.configVersion = CURRENT_CONFIG_VERSION
     }
 
     companion object {
-        private const val CURRENT_CONFIG_VERSION = 1
+        private const val CURRENT_CONFIG_VERSION = 2
 
         fun getInstance(project: Project): DbtHelperSettings =
             project.service<DbtHelperSettings>()

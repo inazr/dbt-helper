@@ -906,7 +906,8 @@
         try {
             var ids = typeof idsJson === 'string' ? JSON.parse(idsJson) : idsJson;
             ids.forEach(function (id) { nodeStatus[id] = 'queued'; });
-            repaintAllStatusCards();
+            // Status is always recorded, but only painted in status color mode.
+            if (currentColorMode === 'status') repaintAllStatusCards();
         } catch (e) { console.error('seedQueuedStatuses error:', e); }
     };
 
@@ -925,7 +926,9 @@
                     }
                 }
             });
-            repaintAllStatusCards();
+            // Status colors are only painted in status mode; the failure badges and
+            // "last run" hint are independent overlays and always update.
+            if (currentColorMode === 'status') repaintAllStatusCards();
             if (typeof repaintAllFailureBadges === 'function') repaintAllFailureBadges();
             renderRunResultsHint(map);
         } catch (e) { console.error('setRunResults error:', e); }
